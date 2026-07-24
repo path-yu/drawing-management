@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { LayoutGrid, List, SplitSquareVertical, X, Trash2, CheckSquare, Square, AlertTriangle } from 'lucide-react';
+import { LayoutGrid, List, SplitSquareVertical, X, Trash2, CheckSquare, Square, AlertTriangle, RefreshCw, Search, Maximize2 } from 'lucide-react';
 import { Header } from '../components/Header';
 import { FilterSidebar } from '../components/FilterSidebar';
 import { DrawingCard } from '../components/DrawingCard';
@@ -54,6 +54,7 @@ export function DashboardPage() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<'single' | 'batch'>('single');
   const [deleteDrawing, setDeleteDrawing] = useState<VesselDrawing | null>(null);
+  const [splitSelectedDrawing, setSplitSelectedDrawing] = useState<VesselDrawing | null>(null);
 
   useEffect(() => {
     fetchDrawings();
@@ -80,6 +81,13 @@ export function DashboardPage() {
   };
 
   const filteredDrawings = useMemo(() => drawings, [drawings]);
+
+  // 分屏视图首次打开时自动选中第一个图纸
+  useEffect(() => {
+    if (viewMode === 'split' && filteredDrawings.length > 0 && !splitSelectedDrawing) {
+      setSplitSelectedDrawing(filteredDrawings[0]);
+    }
+  }, [viewMode, filteredDrawings, splitSelectedDrawing]);
 
   const handleResetFilter = () => {
     setFilter(initialFilter);
@@ -236,6 +244,32 @@ export function DashboardPage() {
                 </button>
               </div>
 
+              {/* 搜索框 */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="搜索物料编码、文件名..."
+                  value={searchKeyword}
+                  onChange={(e) => setSearchKeyword(e.target.value)}
+                  className="input-field pl-10 pr-4 py-2 w-64 text-sm"
+                />
+              </div>
+
+              {/* 刷新按钮 */}
+              <button
+                onClick={fetchDrawings}
+                disabled={loading}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm font-medium ${
+                  loading
+                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed dark:bg-slate-700'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600'
+                }`}
+              >
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                刷新
+              </button>
+
               <div className="flex flex-wrap gap-2">
                 {appliedFilters.map((f) => (
                   <span
@@ -336,39 +370,62 @@ export function DashboardPage() {
 
                 {viewMode === 'split' && (
                   <div className="grid grid-cols-2 gap-4 h-full">
-                    <div className="grid grid-cols-1 gap-4 overflow-auto">
-                      {filteredDrawings.slice(0, 4).map((drawing) => (
+                    <div className="grid grid-cols-1 gap-3 overflow-auto">
+                      {filteredDrawings.map((drawing) => (
                         <div
                           key={drawing.id}
-                          className="card p-4 cursor-pointer hover:border-primary-500 transition-colors"
-                          onClick={() => handlePreview(drawing)}
+                          className={`card p-3 cursor-pointer transition-all ${
+                            splitSelectedDrawing?.id === drawing.id
+                              ? 'border-primary-500 bg-primary-50/50 dark:bg-primary-900/20'
+                              : 'hover:border-primary-300'
+                          }`}
+                          onClick={() => {
+                            setSplitSelectedDrawing(drawing);
+                          }}
                         >
-                          <div className="flex items-center gap-4">
-                            <div className="w-20 h-16 bg-slate-100 rounded-lg flex items-center justify-center dark:bg-slate-700">
-                              <svg className="w-16 h-12" viewBox="0 0 80 60" fill="none">
-                                <rect x="5" y="10" width="70" height="40" rx="4" stroke="#475569" strokeWidth="1.5" className="dark:stroke-slate-400" />
-                                <circle cx="40" cy="25" r="12" stroke="#2563EB" strokeWidth="1.5" fill="none" className="dark:stroke-blue-400" />
-                                <line x1="40" y1="25" x2="40" y2="48" stroke="#64748B" strokeWidth="1" className="dark:stroke-slate-400" />
-                              </svg>
+                          <div className="flex items-center gap-3">
+                            <div className={`w-16 h-12 rounded-lg flex items-center justify-center overflow-hidden ${
+                              drawing.structure_type === '立式' ? 'bg-blue-50 dark:bg-blue-900/20' : 'bg-orange-50 dark:bg-orange-900/20'
+                            }`}>
+                              {drawing.preview_image ? (
+                                <img
+                                  src={`http://localhost:3000${drawing.preview_image}`}
+                                  alt={drawing.file_name}
+                                  className={`max-w-full max-h-full ${
+                                    drawing.structure_type === '立式' ? 'w-auto h-full' : 'w-full h-auto'
+                                  }`}
+                                  onError={(e) => {
+                                    (e.target as HTMLImageElement).style.display = 'none';
+                                  }}
+                                />
+                              ) : (
+                                <svg className="w-12 h-10" viewBox="0 0 80 60" fill="none">
+                                  <rect x="5" y="10" width="70" height="40" rx="4" stroke="#475569" strokeWidth="1.5" className="dark:stroke-slate-400" />
+                                  <circle cx="40" cy="25" r="12" stroke="#2563EB" strokeWidth="1.5" fill="none" className="dark:stroke-blue-400" />
+                                  <line x1="40" y1="25" x2="40" y2="48" stroke="#64748B" strokeWidth="1" className="dark:stroke-slate-400" />
+                                </svg>
+                              )}
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2">
-                                <h4 className="font-medium text-slate-800 truncate dark:text-slate-100">{drawing.file_name}</h4>
-                                <span className="badge badge-gray">{drawing.version}</span>
+                                <h4 className="font-medium text-slate-800 truncate dark:text-slate-100 text-sm">{drawing.file_name}</h4>
+                                <span className="badge badge-gray text-xs">{drawing.version}</span>
                               </div>
                               <div className="flex items-center gap-2 mt-1">
-                                <span className="text-sm text-primary-600 font-medium dark:text-primary-400">{drawing.material_code}</span>
+                                <span className="text-xs text-primary-600 font-medium dark:text-primary-400">{drawing.material_code}</span>
                                 <span
-                                  className={`badge ${
+                                  className={`badge text-xs ${
                                     drawing.structure_type === '立式' ? 'badge-primary' : 'badge-orange'
                                   }`}
                                 >
                                   {drawing.structure_type}
                                 </span>
                               </div>
-                              <div className="flex items-center gap-3 mt-2 text-xs text-slate-500 dark:text-slate-400">
+                              <div className="flex items-center gap-2 mt-1 text-xs text-slate-500 dark:text-slate-400">
                                 <span>{drawing.volume} m³</span>
+                                <span className="text-slate-300">|</span>
                                 <span>{drawing.design_pressure} MPa</span>
+                                <span className="text-slate-300">|</span>
                                 <span>{drawing.nominal_diameter} mm</span>
                               </div>
                             </div>
@@ -376,11 +433,127 @@ export function DashboardPage() {
                         </div>
                       ))}
                     </div>
-                    <div className="bg-slate-100 rounded-xl border border-slate-200 flex items-center justify-center p-8 dark:bg-slate-800 dark:border-slate-700">
-                      <div className="text-center text-slate-400">
-                        <SplitSquareVertical className="w-16 h-16 mx-auto mb-4" />
-                        <p>点击左侧图纸卡片进行预览</p>
-                      </div>
+                    <div className="bg-slate-100 rounded-xl border border-slate-200 dark:bg-slate-800 dark:border-slate-700 overflow-hidden">
+                      {splitSelectedDrawing ? (
+                        <div className="h-full flex flex-col">
+                          <div className="px-4 py-3 bg-white border-b border-slate-200 dark:bg-slate-800 dark:border-slate-700">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <h3 className="font-semibold text-slate-800 dark:text-slate-100 text-sm">
+                                  {splitSelectedDrawing.file_name}
+                                </h3>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                  {splitSelectedDrawing.material_code} | {splitSelectedDrawing.structure_type}
+                                </p>
+                              </div>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => handlePreview(splitSelectedDrawing)}
+                                  className="p-2 text-slate-600 hover:bg-blue-50 rounded-lg transition-colors dark:text-slate-300 dark:hover:bg-blue-900/30"
+                                  title="全屏预览"
+                                >
+                                  <Maximize2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex-1 overflow-auto p-2 pdf-scrollbar">
+                            <div className="min-h-full flex items-start justify-center">
+                              {splitSelectedDrawing.preview_image ? (
+                                <img
+                                  src={`http://localhost:3000${splitSelectedDrawing.preview_image}`}
+                                  alt={splitSelectedDrawing.file_name}
+                                  className="border border-slate-300 rounded-lg bg-white shadow-sm"
+                                  style={{ 
+                                    ...(splitSelectedDrawing.structure_type === '卧式' 
+                                      ? { maxWidth: '100%', height: 'auto' } 
+                                      : { maxHeight: '100%', width: 'auto' }
+                                    )
+                                  }}
+                                />
+                              ) : (
+                                <svg 
+                                  viewBox={splitSelectedDrawing.structure_type === '立式' ? "0 0 400 500" : "0 0 500 300"} 
+                                  fill="none" 
+                                  className="border border-slate-300 rounded-lg bg-white"
+                                  style={{ 
+                                    ...(splitSelectedDrawing.structure_type === '卧式' 
+                                      ? { maxWidth: '100%', height: 'auto' } 
+                                      : { maxHeight: '100%', width: 'auto' }
+                                    )
+                                  }}
+                                >
+                                  {splitSelectedDrawing.structure_type === '立式' ? (
+                                    <>
+                                      <rect x="50" y="30" width="300" height="440" rx="15" stroke="#1E293B" strokeWidth="3" fill="white" />
+                                      <rect x="70" y="50" width="260" height="400" rx="10" stroke="#64748B" strokeWidth="1.5" fill="none" />
+                                      <rect x="50" y="30" width="300" height="20" rx="15" stroke="#1E293B" strokeWidth="3" fill="#94A3B8" />
+                                      <rect x="50" y="450" width="300" height="20" rx="15" stroke="#1E293B" strokeWidth="3" fill="#94A3B8" />
+                                      <line x1="200" y1="70" x2="200" y2="450" stroke="#64748B" strokeWidth="1" strokeDasharray="4 4" />
+                                      <circle cx="200" cy="100" r="40" stroke="#2563EB" strokeWidth="2" fill="none" />
+                                      <rect x="120" y="170" width="160" height="15" rx="3" fill="#F97316" />
+                                      <rect x="140" y="200" width="120" height="12" rx="2" fill="#64748B" />
+                                      <rect x="130" y="230" width="140" height="12" rx="2" fill="#64748B" />
+                                      <rect x="150" y="260" width="100" height="12" rx="2" fill="#64748B" />
+                                      <rect x="160" y="290" width="80" height="12" rx="2" fill="#64748B" />
+                                      <rect x="10" y="80" width="30" height="60" rx="5" stroke="#2563EB" strokeWidth="2" fill="white" />
+                                      <text x="25" y="115" textAnchor="middle" fill="#2563EB" fontSize="10" fontWeight="bold">安全阀</text>
+                                      <rect x="360" y="200" width="30" height="80" rx="5" stroke="#F97316" strokeWidth="2" fill="white" />
+                                      <text x="375" y="245" textAnchor="middle" fill="#F97316" fontSize="10" fontWeight="bold">进出口</text>
+                                      <rect x="360" y="350" width="30" height="40" rx="5" stroke="#EF4444" strokeWidth="2" fill="white" />
+                                      <text x="375" y="375" textAnchor="middle" fill="#EF4444" fontSize="9" fontWeight="bold">排污口</text>
+                                      <text x="200" y="20" textAnchor="middle" fill="#475569" fontSize="12" fontWeight="bold">
+                                        {splitSelectedDrawing.material_code} - {splitSelectedDrawing.file_name}
+                                      </text>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <rect x="30" y="100" width="440" height="300" rx="150" stroke="#1E293B" strokeWidth="3" fill="white" />
+                                      <rect x="50" y="120" width="400" height="260" rx="130" stroke="#64748B" strokeWidth="1.5" fill="none" />
+                                      <line x1="250" y1="100" x2="250" y2="400" stroke="#64748B" strokeWidth="1" strokeDasharray="4 4" />
+                                      <circle cx="250" cy="250" r="80" stroke="#2563EB" strokeWidth="2" fill="none" />
+                                      <rect x="150" y="200" width="200" height="15" rx="3" fill="#F97316" />
+                                      <rect x="180" y="230" width="140" height="12" rx="2" fill="#64748B" />
+                                      <rect x="160" y="260" width="180" height="12" rx="2" fill="#64748B" />
+                                      <rect x="190" y="290" width="120" height="12" rx="2" fill="#64748B" />
+                                      <rect x="10" y="200" width="40" height="80" rx="5" stroke="#2563EB" strokeWidth="2" fill="white" />
+                                      <text x="30" y="245" textAnchor="middle" fill="#2563EB" fontSize="10" fontWeight="bold">安全阀</text>
+                                      <rect x="450" y="150" width="40" height="60" rx="5" stroke="#F97316" strokeWidth="2" fill="white" />
+                                      <text x="470" y="185" textAnchor="middle" fill="#F97316" fontSize="10" fontWeight="bold">进口</text>
+                                      <rect x="450" y="250" width="40" height="60" rx="5" stroke="#F97316" strokeWidth="2" fill="white" />
+                                      <text x="470" y="285" textAnchor="middle" fill="#F97316" fontSize="10" fontWeight="bold">出口</text>
+                                      <rect x="450" y="350" width="40" height="40" rx="5" stroke="#EF4444" strokeWidth="2" fill="white" />
+                                      <text x="470" y="375" textAnchor="middle" fill="#EF4444" fontSize="9" fontWeight="bold">排污</text>
+                                      <text x="250" y="480" textAnchor="middle" fill="#475569" fontSize="12" fontWeight="bold">
+                                        {splitSelectedDrawing.material_code} - {splitSelectedDrawing.file_name}
+                                      </text>
+                                    </>
+                                  )}
+                                </svg>
+                              )}
+                            </div>
+                          </div>
+                          <div className="px-4 py-3 bg-white border-t border-slate-200 dark:bg-slate-800 dark:border-slate-700">
+                            <div className="flex items-center gap-4 text-xs">
+                              <span className="text-slate-500 dark:text-slate-400">容积:</span>
+                              <span className="font-medium text-slate-800 dark:text-slate-100">{splitSelectedDrawing.volume} m³</span>
+                              <span className="text-slate-500 dark:text-slate-400">压力:</span>
+                              <span className="font-medium text-slate-800 dark:text-slate-100">{splitSelectedDrawing.design_pressure} MPa</span>
+                              <span className="text-slate-500 dark:text-slate-400">直径:</span>
+                              <span className="font-medium text-slate-800 dark:text-slate-100">{splitSelectedDrawing.nominal_diameter} mm</span>
+                              <span className="text-slate-500 dark:text-slate-400">材质:</span>
+                              <span className="font-medium text-slate-800 dark:text-slate-100">{splitSelectedDrawing.material}</span>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="h-full flex items-center justify-center p-8">
+                          <div className="text-center text-slate-400">
+                            <SplitSquareVertical className="w-16 h-16 mx-auto mb-4" />
+                            <p>点击左侧图纸卡片进行预览</p>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}

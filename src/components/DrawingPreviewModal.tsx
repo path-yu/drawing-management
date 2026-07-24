@@ -14,6 +14,16 @@ export function DrawingPreviewModal({ drawing, onClose }: DrawingPreviewModalPro
   const [previewMode, setPreviewMode] = useState<'svg' | 'pdf'>('svg');
   const [zoom, setZoom] = useState(100);
 
+  const safeNumber = (value: number | null | undefined, decimals: number = 0): string => {
+    if (value === null || value === undefined) return '-';
+    return value.toFixed(decimals);
+  };
+
+  const safeLocaleNumber = (value: number | null | undefined): string => {
+    if (value === null || value === undefined) return '-';
+    return value.toLocaleString();
+  };
+
   const tabs = [
     { id: 'params', label: '完整技术参数' },
     { id: 'connections', label: '接管表与接口规格' },
@@ -116,79 +126,93 @@ export function DrawingPreviewModal({ drawing, onClose }: DrawingPreviewModalPro
               </button>
             </div>
 
-            <div className="flex-1 overflow-auto p-8">
+            <div className="flex-1 overflow-auto p-4 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-slate-100 dark:scrollbar-thumb-slate-600 dark:scrollbar-track-slate-800">
               {previewMode === 'svg' ? (
-                <div className="flex items-center justify-center h-full">
-                  <div className={`transition-transform duration-200 ${drawing.structure_type === '立式' ? 'w-[400px]' : 'w-[500px]'}`} style={{ transform: `scale(${zoom / 100})` }}>
-                    <svg viewBox="0 0 400 500" fill="none" className="border border-slate-300 rounded-lg bg-white">
-                      {drawing.structure_type === '立式' ? (
-                        <>
-                          <rect x="50" y="30" width="300" height="440" rx="15" stroke="#1E293B" strokeWidth="3" fill="white" />
-                          <rect x="70" y="50" width="260" height="400" rx="10" stroke="#64748B" strokeWidth="1.5" fill="none" />
-                          <rect x="50" y="30" width="300" height="20" rx="15" stroke="#1E293B" strokeWidth="3" fill="#94A3B8" />
-                          <rect x="50" y="450" width="300" height="20" rx="15" stroke="#1E293B" strokeWidth="3" fill="#94A3B8" />
-                          <line x1="200" y1="70" x2="200" y2="450" stroke="#64748B" strokeWidth="1" strokeDasharray="4 4" />
-                          <circle cx="200" cy="100" r="40" stroke="#2563EB" strokeWidth="2" fill="none" />
-                          <rect x="120" y="170" width="160" height="15" rx="3" fill="#F97316" />
-                          <rect x="140" y="200" width="120" height="12" rx="2" fill="#64748B" />
-                          <rect x="130" y="230" width="140" height="12" rx="2" fill="#64748B" />
-                          <rect x="150" y="260" width="100" height="12" rx="2" fill="#64748B" />
-                          <rect x="160" y="290" width="80" height="12" rx="2" fill="#64748B" />
-                          <rect x="10" y="80" width="30" height="60" rx="5" stroke="#2563EB" strokeWidth="2" fill="white" />
-                          <text x="25" y="115" textAnchor="middle" fill="#2563EB" fontSize="10" fontWeight="bold">安全阀</text>
-                          <rect x="360" y="200" width="30" height="80" rx="5" stroke="#F97316" strokeWidth="2" fill="white" />
-                          <text x="375" y="245" textAnchor="middle" fill="#F97316" fontSize="10" fontWeight="bold">进出口</text>
-                          <rect x="360" y="350" width="30" height="40" rx="5" stroke="#EF4444" strokeWidth="2" fill="white" />
-                          <text x="375" y="375" textAnchor="middle" fill="#EF4444" fontSize="9" fontWeight="bold">排污口</text>
-                          <text x="200" y="20" textAnchor="middle" fill="#475569" fontSize="12" fontWeight="bold">
-                            {drawing.material_code} - {drawing.file_name}
-                          </text>
-                        </>
-                      ) : (
-                        <>
-                          <rect x="30" y="100" width="440" height="300" rx="150" stroke="#1E293B" strokeWidth="3" fill="white" />
-                          <rect x="50" y="120" width="400" height="260" rx="130" stroke="#64748B" strokeWidth="1.5" fill="none" />
-                          <line x1="250" y1="100" x2="250" y2="400" stroke="#64748B" strokeWidth="1" strokeDasharray="4 4" />
-                          <circle cx="250" cy="250" r="80" stroke="#2563EB" strokeWidth="2" fill="none" />
-                          <rect x="150" y="200" width="200" height="15" rx="3" fill="#F97316" />
-                          <rect x="180" y="230" width="140" height="12" rx="2" fill="#64748B" />
-                          <rect x="160" y="260" width="180" height="12" rx="2" fill="#64748B" />
-                          <rect x="190" y="290" width="120" height="12" rx="2" fill="#64748B" />
-                          <rect x="10" y="200" width="40" height="80" rx="5" stroke="#2563EB" strokeWidth="2" fill="white" />
-                          <text x="30" y="245" textAnchor="middle" fill="#2563EB" fontSize="10" fontWeight="bold">安全阀</text>
-                          <rect x="470" y="200" width="40" height="80" rx="5" stroke="#F97316" strokeWidth="2" fill="white" />
-                          <text x="490" y="245" textAnchor="middle" fill="#F97316" fontSize="10" fontWeight="bold">进出口</text>
-                          <rect x="230" y="400" width="40" height="30" rx="5" stroke="#EF4444" strokeWidth="2" fill="white" />
-                          <text x="250" y="422" textAnchor="middle" fill="#EF4444" fontSize="9" fontWeight="bold">排污口</text>
-                          <text x="250" y="70" textAnchor="middle" fill="#475569" fontSize="12" fontWeight="bold">
-                            {drawing.material_code} - {drawing.file_name}
-                          </text>
-                        </>
-                      )}
-                    </svg>
+                <div className="min-h-full flex items-start justify-center">
+                  <div className="transition-all duration-200" style={{ transform: `scale(${zoom / 100})`, transformOrigin: 'top center' }}>
+                    {drawing.preview_image ? (
+                      <img
+                        src={`http://localhost:3000${drawing.preview_image}`}
+                        alt={drawing.file_name}
+                        className="border border-slate-300 rounded-lg bg-white shadow-sm"
+                        style={{ maxWidth: 'none', height: 'auto' }}
+                      />
+                    ) : (
+                      <svg viewBox="0 0 400 500" fill="none" className="border border-slate-300 rounded-lg bg-white">
+                        {drawing.structure_type === '立式' ? (
+                          <>
+                            <rect x="50" y="30" width="300" height="440" rx="15" stroke="#1E293B" strokeWidth="3" fill="white" />
+                            <rect x="70" y="50" width="260" height="400" rx="10" stroke="#64748B" strokeWidth="1.5" fill="none" />
+                            <rect x="50" y="30" width="300" height="20" rx="15" stroke="#1E293B" strokeWidth="3" fill="#94A3B8" />
+                            <rect x="50" y="450" width="300" height="20" rx="15" stroke="#1E293B" strokeWidth="3" fill="#94A3B8" />
+                            <line x1="200" y1="70" x2="200" y2="450" stroke="#64748B" strokeWidth="1" strokeDasharray="4 4" />
+                            <circle cx="200" cy="100" r="40" stroke="#2563EB" strokeWidth="2" fill="none" />
+                            <rect x="120" y="170" width="160" height="15" rx="3" fill="#F97316" />
+                            <rect x="140" y="200" width="120" height="12" rx="2" fill="#64748B" />
+                            <rect x="130" y="230" width="140" height="12" rx="2" fill="#64748B" />
+                            <rect x="150" y="260" width="100" height="12" rx="2" fill="#64748B" />
+                            <rect x="160" y="290" width="80" height="12" rx="2" fill="#64748B" />
+                            <rect x="10" y="80" width="30" height="60" rx="5" stroke="#2563EB" strokeWidth="2" fill="white" />
+                            <text x="25" y="115" textAnchor="middle" fill="#2563EB" fontSize="10" fontWeight="bold">安全阀</text>
+                            <rect x="360" y="200" width="30" height="80" rx="5" stroke="#F97316" strokeWidth="2" fill="white" />
+                            <text x="375" y="245" textAnchor="middle" fill="#F97316" fontSize="10" fontWeight="bold">进出口</text>
+                            <rect x="360" y="350" width="30" height="40" rx="5" stroke="#EF4444" strokeWidth="2" fill="white" />
+                            <text x="375" y="375" textAnchor="middle" fill="#EF4444" fontSize="9" fontWeight="bold">排污口</text>
+                            <text x="200" y="20" textAnchor="middle" fill="#475569" fontSize="12" fontWeight="bold">
+                              {drawing.material_code} - {drawing.file_name}
+                            </text>
+                          </>
+                        ) : (
+                          <>
+                            <rect x="30" y="100" width="440" height="300" rx="150" stroke="#1E293B" strokeWidth="3" fill="white" />
+                            <rect x="50" y="120" width="400" height="260" rx="130" stroke="#64748B" strokeWidth="1.5" fill="none" />
+                            <line x1="250" y1="100" x2="250" y2="400" stroke="#64748B" strokeWidth="1" strokeDasharray="4 4" />
+                            <circle cx="250" cy="250" r="80" stroke="#2563EB" strokeWidth="2" fill="none" />
+                            <rect x="150" y="200" width="200" height="15" rx="3" fill="#F97316" />
+                            <rect x="180" y="230" width="140" height="12" rx="2" fill="#64748B" />
+                            <rect x="160" y="260" width="180" height="12" rx="2" fill="#64748B" />
+                            <rect x="190" y="290" width="120" height="12" rx="2" fill="#64748B" />
+                            <rect x="10" y="200" width="40" height="80" rx="5" stroke="#2563EB" strokeWidth="2" fill="white" />
+                            <text x="30" y="245" textAnchor="middle" fill="#2563EB" fontSize="10" fontWeight="bold">安全阀</text>
+                            <rect x="470" y="200" width="40" height="80" rx="5" stroke="#F97316" strokeWidth="2" fill="white" />
+                            <text x="490" y="245" textAnchor="middle" fill="#F97316" fontSize="10" fontWeight="bold">进出口</text>
+                            <rect x="230" y="400" width="40" height="30" rx="5" stroke="#EF4444" strokeWidth="2" fill="white" />
+                            <text x="250" y="422" textAnchor="middle" fill="#EF4444" fontSize="9" fontWeight="bold">排污口</text>
+                            <text x="250" y="70" textAnchor="middle" fill="#475569" fontSize="12" fontWeight="bold">
+                              {drawing.material_code} - {drawing.file_name}
+                            </text>
+                          </>
+                        )}
+                      </svg>
+                    )}
                   </div>
                 </div>
               ) : (
                 <div className="h-full">
                   <PDFPreview drawing={drawing} />
+                  {/* <embed className='w-full h-full ' src={`http://localhost:3000${drawing.pdf_file_path}`} type="application/pdf">
+                  </embed> */}
                 </div>
               )}
             </div>
           </div>
 
           <div className="w-100 border-l border-slate-200 flex flex-col dark:border-slate-700">
-            <div className="flex border-b border-slate-200 dark:border-slate-700">
+            <div className="flex border-b border-slate-200 bg-white/50 dark:border-slate-700 dark:bg-slate-800/50 overflow-x-auto scrollbar-hide">
               {tabs.map((tab) => (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex-1 py-3 text-sm font-medium transition-colors ${
+                  className={`relative flex-shrink-0 px-4 py-3 text-sm font-medium transition-all whitespace-nowrap ${
                     activeTab === tab.id
-                      ? 'text-primary-600 border-b-2 border-primary-600 bg-primary-50 dark:text-primary-400 dark:border-primary-500 dark:bg-primary-900/30'
-                      : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-700'
+                      ? 'text-primary-600 dark:text-primary-400'
+                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
                   }`}
                 >
                   {tab.label}
+                  {activeTab === tab.id && (
+                    <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-12 h-0.5 bg-primary-600 rounded-full dark:bg-primary-400" />
+                  )}
                 </button>
               ))}
             </div>
@@ -206,35 +230,35 @@ export function DrawingPreviewModal({ drawing, onClose }: DrawingPreviewModalPro
                   <div className="grid grid-cols-2 gap-3">
                     <div className="bg-slate-50 rounded-lg p-3 dark:bg-slate-700">
                       <p className="text-xs text-slate-500 mb-1 dark:text-slate-400">工作压力</p>
-                      <p className="text-lg font-semibold text-slate-800 dark:text-slate-100">{drawing.working_pressure.toFixed(2)} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">MPa</span></p>
+                      <p className="text-lg font-semibold text-slate-800 dark:text-slate-100">{safeNumber(drawing.working_pressure, 2)} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">MPa</span></p>
                     </div>
                     <div className="bg-slate-50 rounded-lg p-3 dark:bg-slate-700">
                       <p className="text-xs text-slate-500 mb-1 dark:text-slate-400">设计压力</p>
-                      <p className="text-lg font-semibold text-slate-800 dark:text-slate-100">{drawing.design_pressure.toFixed(2)} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">MPa</span></p>
+                      <p className="text-lg font-semibold text-slate-800 dark:text-slate-100">{safeNumber(drawing.design_pressure, 2)} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">MPa</span></p>
                     </div>
                     <div className="bg-slate-50 rounded-lg p-3 dark:bg-slate-700">
                       <p className="text-xs text-slate-500 mb-1 dark:text-slate-400">设计温度</p>
-                      <p className="text-lg font-semibold text-slate-800 dark:text-slate-100">{drawing.design_temperature} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">℃</span></p>
+                      <p className="text-lg font-semibold text-slate-800 dark:text-slate-100">{safeNumber(drawing.design_temperature)} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">℃</span></p>
                     </div>
                     <div className="bg-slate-50 rounded-lg p-3 dark:bg-slate-700">
                       <p className="text-xs text-slate-500 mb-1 dark:text-slate-400">容积</p>
-                      <p className="text-lg font-semibold text-slate-800 dark:text-slate-100">{drawing.volume.toFixed(2)} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">m³</span></p>
+                      <p className="text-lg font-semibold text-slate-800 dark:text-slate-100">{safeNumber(drawing.volume, 2)} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">m³</span></p>
                     </div>
                     <div className="bg-slate-50 rounded-lg p-3 dark:bg-slate-700">
                       <p className="text-xs text-slate-500 mb-1 dark:text-slate-400">公称直径</p>
-                      <p className="text-lg font-semibold text-slate-800 dark:text-slate-100">{drawing.nominal_diameter} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">mm</span></p>
+                      <p className="text-lg font-semibold text-slate-800 dark:text-slate-100">{safeNumber(drawing.nominal_diameter)} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">mm</span></p>
                     </div>
                     <div className="bg-slate-50 rounded-lg p-3 dark:bg-slate-700">
                       <p className="text-xs text-slate-500 mb-1 dark:text-slate-400">壁厚</p>
-                      <p className="text-lg font-semibold text-slate-800 dark:text-slate-100">{drawing.wall_thickness.toFixed(1)} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">mm</span></p>
+                      <p className="text-lg font-semibold text-slate-800 dark:text-slate-100">{safeNumber(drawing.wall_thickness, 1)} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">mm</span></p>
                     </div>
                     <div className="bg-slate-50 rounded-lg p-3 dark:bg-slate-700">
                       <p className="text-xs text-slate-500 mb-1 dark:text-slate-400">设备总高/总长</p>
-                      <p className="text-lg font-semibold text-slate-800 dark:text-slate-100">{drawing.total_height_or_length} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">mm</span></p>
+                      <p className="text-lg font-semibold text-slate-800 dark:text-slate-100">{safeNumber(drawing.total_height_or_length)} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">mm</span></p>
                     </div>
                     <div className="bg-slate-50 rounded-lg p-3 dark:bg-slate-700">
                       <p className="text-xs text-slate-500 mb-1 dark:text-slate-400">重量</p>
-                      <p className="text-lg font-semibold text-slate-800 dark:text-slate-100">{drawing.weight.toLocaleString()} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">kg</span></p>
+                      <p className="text-lg font-semibold text-slate-800 dark:text-slate-100">{safeLocaleNumber(drawing.weight)} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">kg</span></p>
                     </div>
                   </div>
 
@@ -245,7 +269,7 @@ export function DrawingPreviewModal({ drawing, onClose }: DrawingPreviewModalPro
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-slate-500 dark:text-slate-400">设计使用年限</span>
-                      <span className="text-slate-800 font-medium dark:text-slate-100">{drawing.design_life} 年</span>
+                      <span className="text-slate-800 font-medium dark:text-slate-100">{safeNumber(drawing.design_life)} 年</span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-slate-500 dark:text-slate-400">创建人</span>
@@ -281,13 +305,13 @@ export function DrawingPreviewModal({ drawing, onClose }: DrawingPreviewModalPro
                   <div className="bg-orange-50 rounded-lg p-4 dark:bg-orange-900/30">
                     <p className="text-sm font-medium text-orange-800 mb-2 dark:text-orange-400">进口连接</p>
                     <p className="text-sm text-orange-600 dark:text-orange-300">{drawing.inlet_connection}</p>
-                    <p className="text-xs text-orange-500 mt-1 dark:text-orange-400">{drawing.inlet_count} 进</p>
+                    <p className="text-xs text-orange-500 mt-1 dark:text-orange-400">{safeNumber(drawing.inlet_count)} 进</p>
                   </div>
 
                   <div className="bg-green-50 rounded-lg p-4 dark:bg-green-900/30">
                     <p className="text-sm font-medium text-green-800 mb-2 dark:text-green-400">出口连接</p>
                     <p className="text-sm text-green-600 dark:text-green-300">{drawing.outlet_connection}</p>
-                    <p className="text-xs text-green-500 mt-1 dark:text-green-400">{drawing.outlet_count} 出</p>
+                    <p className="text-xs text-green-500 mt-1 dark:text-green-400">{safeNumber(drawing.outlet_count)} 出</p>
                   </div>
 
                   <div className="mt-6">

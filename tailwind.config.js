@@ -27,7 +27,16 @@ export default {
           blue: '#2563EB',
         },
       },
+      scrollbar: {
+        width: '8px',
+        height: '8px',
+        track: 'rgba(0, 0, 0, 0.05)',
+        thumb: 'rgba(0, 0, 0, 0.2)',
+        'thumb-hover': 'rgba(0, 0, 0, 0.35)',
+      },
     },
   },
-  plugins: [],
+  plugins: [
+    require('tailwind-scrollbar'),
+  ],
 }

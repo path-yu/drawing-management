@@ -70,22 +70,22 @@ export function DataTable({ drawings, onPreview, onExport, onEdit }: DataTablePr
                 </span>
               </td>
               <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
-                {drawing.volume.toFixed(1)}
+                {drawing.volume != null ? drawing.volume.toFixed(1) : '-'}
               </td>
               <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
-                {drawing.design_pressure.toFixed(2)}
+                {drawing.design_pressure != null ? drawing.design_pressure.toFixed(2) : '-'}
               </td>
               <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
-                {drawing.nominal_diameter}
+                {drawing.nominal_diameter != null ? drawing.nominal_diameter : '-'}
               </td>
               <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
-                {drawing.material}
+                {drawing.material || '-'}
               </td>
               <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
-                {drawing.medium}
+                {drawing.medium || '-'}
               </td>
               <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
-                {drawing.weight.toLocaleString()}
+                {drawing.weight != null ? drawing.weight.toLocaleString() : '-'}
               </td>
               <td className="px-4 py-3">
                 <span className="badge badge-gray">{drawing.version}</span>

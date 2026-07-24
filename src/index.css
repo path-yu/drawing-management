@@ -139,3 +139,68 @@ input[type="range"]::-moz-range-thumb {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* 全局自定义滚动条 - 更美观的样式 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.5);
+  border-radius: 3px;
+  transition: background 0.15s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.7);
+}
+
+/* 暗色模式 */
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.5);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.7);
+}
+
+/* PDF 预览区域自定义滚动条 */
+.pdf-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.pdf-scrollbar::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 4px;
+}
+
+.pdf-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.6);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  transition: background 0.15s ease;
+}
+
+.pdf-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.8);
+}
+
+/* 暗色模式 */
+.dark .pdf-scrollbar::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.dark .pdf-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.6);
+}
+
+.dark .pdf-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.8);
+}

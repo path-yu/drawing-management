@@ -35,27 +35,24 @@ export function DrawingCard({ drawing, onPreview, onExport, onEdit, onDelete, se
   };
   return (
     <div className={`card overflow-hidden hover:shadow-md transition-shadow cursor-pointer ${selected ? 'ring-2 ring-primary-500' : ''}`} onClick={() => onPreview(drawing)}>
-      <div className="relative h-40 bg-slate-100 dark:bg-slate-700 flex items-center justify-center overflow-hidden">
-        {drawing.preview_image ? (
+      <div className={`relative bg-slate-100 dark:bg-slate-700 flex items-center justify-center overflow-hidden ${
+        drawing.structure_type === '立式' ? 'h-52' : 'h-40'
+      }`}>
+    
+        {/* PNG预览图覆盖在SVG上面 */}
+        {drawing.preview_image && (
           <img
-            src={drawing.preview_image}
+            src={`http://localhost:3000${drawing.preview_image}`}
             alt={drawing.file_name}
-            className="w-full h-full object-contain"
+            className={`max-w-full max-h-full ${
+              drawing.structure_type === '立式' 
+                ? 'w-auto h-full' 
+                : 'w-full h-auto'
+            }`}
+            onError={(e) => {
+              (e.target as HTMLImageElement).style.display = 'none';
+            }}
           />
-        ) : (
-          <svg className="w-full h-full" viewBox="0 0 200 160" fill="none">
-            <rect x="20" y="40" width="160" height="100" rx="8" stroke="#475569" strokeWidth="2" className="dark:stroke-slate-400" />
-            <rect x="30" y="50" width="140" height="80" rx="4" stroke="#94A3B8" strokeWidth="1" className="dark:stroke-slate-500" />
-            <circle cx="100" cy="70" r="25" stroke="#2563EB" strokeWidth="2" fill="none" className="dark:stroke-blue-400" />
-            <line x1="100" y1="70" x2="100" y2="130" stroke="#475569" strokeWidth="2" className="dark:stroke-slate-400" />
-            <rect x="70" y="70" width="60" height="5" rx="2" fill="#F97316" />
-            <rect x="80" y="85" width="40" height="5" rx="2" fill="#64748B" className="dark:fill-slate-400" />
-            <rect x="75" y="100" width="50" height="5" rx="2" fill="#64748B" className="dark:fill-slate-400" />
-            <rect x="85" y="115" width="30" height="5" rx="2" fill="#64748B" className="dark:fill-slate-400" />
-            <text x="100" y="30" textAnchor="middle" fill="#64748B" fontSize="10" fontFamily="sans-serif" className="dark:fill-slate-400">
-              {drawing.material_code}
-            </text>
-          </svg>
         )}
         <div className="absolute top-2 right-2">
           <span className={`badge ${drawing.structure_type === '立式' ? 'badge-primary' : 'badge-orange'}`}>

@@ -113,7 +113,7 @@ router.post('/', authMiddleware, requirePermission('drawing:create'), (req: Auth
     design_pressure: b.design_pressure,
     design_temperature: b.design_temperature,
     volume: b.volume,
-    structure_type: b.structure_type,
+    structure_type: b.file_name?.startsWith('W') ? '卧式' : '立式',
     material: b.material,
     design_life: b.design_life || 20,
     medium: b.medium,
@@ -221,16 +221,27 @@ router.post('/analyze', async (req: AuthRequest, res) => {
     // 2. 调用DeepSeek API解析
     const parsedData = await analyzePDFWithDeepSeek(textContent, pdfPath);
     
-    // 3. 保存原始PDF文件到服务器
+    // 3. 保存原始PDF文件到服务器（检查是否已在服务器目录中，避免重复复制）
     const pdfDir = path.join(__dirname, '../../uploads/PDF');
     if (!fs.existsSync(pdfDir)) {
       fs.mkdirSync(pdfDir, { recursive: true });
     }
+    
     const originalFileName = path.basename(pdfPath);
-    const pdfFileName = `${parsedData.material_code}_${Date.now()}_${originalFileName}`;
-    const destPdfPath = path.join(pdfDir, pdfFileName);
-    fs.copyFileSync(pdfPath, destPdfPath);
-    const pdfFilePath = `/uploads/PDF/${pdfFileName}`;
+    // 检查文件是否已经在服务器目录中
+    const existingPath = path.join(pdfDir, originalFileName);
+    let pdfFilePath: string;
+    
+    if (fs.existsSync(existingPath)) {
+      // 文件已存在，直接使用，不再重复复制
+      pdfFilePath = `/uploads/PDF/${originalFileName}`;
+    } else {
+      // 文件不在服务器目录，需要复制并重命名
+      const pdfFileName = `${parsedData.material_code}_${Date.now()}_${originalFileName}`;
+      const destPdfPath = path.join(pdfDir, pdfFileName);
+      fs.copyFileSync(pdfPath, destPdfPath);
+      pdfFilePath = `/uploads/PDF/${pdfFileName}`;
+    }
     
     // 4. 生成PDF预览图
     const previewImage = await generatePDFPreview(pdfPath);
@@ -250,7 +261,7 @@ router.post('/analyze', async (req: AuthRequest, res) => {
       design_pressure: parsedData.design_pressure,
       design_temperature: parsedData.design_temperature,
       volume: parsedData.volume,
-      structure_type: parsedData.structure_type,
+      structure_type: parsedData.file_name?.startsWith('W') ? '卧式' : '立式',
       material: parsedData.material,
       design_life: parsedData.design_life || 20,
       medium: parsedData.medium,

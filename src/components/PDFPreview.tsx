@@ -4,7 +4,7 @@ import { ZoomIn, ZoomOut, RotateCcw, FileText, Download, Printer, ChevronLeft, C
 import { VesselDrawing } from '../types';
 
 // 设置 pdfjs-dist worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).href;
 
 interface PDFPreviewProps {
   drawing: VesselDrawing;
@@ -13,40 +13,78 @@ interface PDFPreviewProps {
 export function PDFPreview({ drawing }: PDFPreviewProps) {
   const [numPages, setNumPages] = useState<number>(0);
   const [pageNumber, setPageNumber] = useState<number>(1);
-  const [zoom, setZoom] = useState<number>(1);
-  const [rotation, setRotation] = useState<number>(0);
+  const [zoom, setZoom] = useState<number>(1.7);
+
+  // 💡 关键修改：根据 structure_type 是否为 "立式" 动态初始化旋转角度
+  // 如果 "立式" 转 90 度后方向依然倒置，可以把这里的 90 改为 270
+  const [rotation, setRotation] = useState<number>(() => {
+    return drawing.structure_type === '立式' ? 270 : 0;
+  });
+
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const pdfDocRef = useRef<pdfjsLib.PDFDocumentProxy | null>(null);
+  const isRenderingRef = useRef(false);
 
-  // 加载并渲染 PDF
-  const renderPage = useCallback(async () => {
-    if (!canvasRef.current || !drawing.pdf_file_path) {
+  // 当外部传入的 drawing 发生切换时，同步更新初始旋转角度
+  useEffect(() => {
+    setRotation(drawing.structure_type === '立式' ? 270 : 0);
+  }, [drawing.structure_type]);
+
+  // 加载 PDF 文档
+  useEffect(() => {
+    if (!drawing.pdf_file_path) {
       setError('无法加载PDF文件');
       setLoading(false);
       return;
     }
 
-    setLoading(true);
-    setError(null);
+    const loadDocument = async () => {
+      try {
+        const response = await fetch(`http://localhost:3000${drawing.pdf_file_path}`);
+        if (!response.ok) {
+          throw new Error('无法获取PDF文件');
+        }
+        const arrayBuffer = await response.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        pdfDocRef.current = pdf;
+        setNumPages(pdf.numPages);
+        setError(null);
+      } catch (err) {
+        console.error('PDF加载错误:', err);
+        setError('PDF加载失败');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadDocument();
+
+    return () => {
+      pdfDocRef.current = null;
+    };
+  }, [drawing.pdf_file_path]);
+
+  // 渲染指定页面
+  const renderPage = useCallback(async () => {
+    if (isRenderingRef.current) return;
+    isRenderingRef.current = true;
+
+    if (!canvasRef.current || !pdfDocRef.current) {
+      isRenderingRef.current = false;
+      return;
+    }
 
     try {
-      // 使用 fetch 获取 PDF 文件
-      const response = await fetch(drawing.pdf_file_path);
-      if (!response.ok) {
-        throw new Error('无法获取PDF文件');
-      }
-      const arrayBuffer = await response.arrayBuffer();
-      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      const pageNum = Math.min(Math.max(pageNumber, 1), pdfDocRef.current.numPages);
+      const page = await pdfDocRef.current.getPage(pageNum);
 
-      setNumPages(pdf.numPages);
-
-      // 确保页码在有效范围内
-      const pageNum = Math.min(Math.max(pageNumber, 1), pdf.numPages);
-      setPageNumber(pageNum);
-
-      const page = await pdf.getPage(pageNum);
-      const viewport = page.getViewport({ scale: zoom, rotation });
+      // 标准 PDF.js 渲染逻辑
+      const viewport = page.getViewport({ 
+        scale: zoom, 
+        rotation: rotation 
+      });
 
       const canvas = canvasRef.current;
       const ctx = canvas.getContext('2d');
@@ -57,28 +95,31 @@ export function PDFPreview({ drawing }: PDFPreviewProps) {
       canvas.width = viewport.width;
       canvas.height = viewport.height;
 
-      await page.render({
-        canvas: canvasRef.current,
-        viewport: viewport
-      }).promise;
+      const renderTask = page.render({
+        canvasContext: ctx,
+        viewport: viewport,
+        canvas: canvasRef.current  
+      });
+
+      await renderTask.promise;
 
     } catch (err) {
       console.error('PDF渲染错误:', err);
-      setError('PDF渲染失败');
     } finally {
-      setLoading(false);
+      isRenderingRef.current = false;
     }
-  }, [drawing.pdf_file_path, pageNumber, zoom, rotation]);
+  }, [pageNumber, zoom, rotation]);
 
   useEffect(() => {
-    renderPage();
-  }, [renderPage]);
+    if (pdfDocRef.current && !loading) {
+      renderPage();
+    }
+  }, [renderPage, loading]);
 
   const handleDownload = async () => {
     if (!drawing.pdf_file_path) return;
-    
     try {
-      const response = await fetch(drawing.pdf_file_path);
+      const response = await fetch(`http://localhost:3000${drawing.pdf_file_path}`);
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -143,29 +184,27 @@ export function PDFPreview({ drawing }: PDFPreviewProps) {
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto p-4 bg-slate-100">
-        {loading ? (
-          <div className="flex items-center justify-center h-full">
+      <div className="flex-1 overflow-auto p-4 bg-slate-100 relative pdf-scrollbar">
+        <div className="flex items-center justify-center min-h-full" style={{ opacity: loading || error ? 0 : 1 }}>
+          <canvas
+            ref={canvasRef}
+            className="bg-white shadow-lg max-w-full"
+          />
+        </div>
+        
+        {loading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-slate-100/90">
             <div className="animate-spin rounded-full h-10 w-10 border-4 border-primary-600 border-t-transparent" />
           </div>
-        ) : error ? (
-          <div className="flex items-center justify-center h-full">
+        )}
+        
+        {error && !loading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-slate-100/90">
             <div className="text-center text-slate-500">
               <FileText className="w-12 h-12 mx-auto mb-2 text-slate-300" />
               <p>{error}</p>
               <p className="text-sm mt-1">请检查PDF文件是否存在</p>
             </div>
-          </div>
-        ) : (
-          <div className="flex items-center justify-center">
-            <canvas
-              ref={canvasRef}
-              className="bg-white shadow-lg max-w-full"
-              style={{
-                transform: `rotate(${rotation}deg)`,
-                transformOrigin: 'center center',
-              }}
-            />
           </div>
         )}
       </div>

@@ -53,3 +53,4 @@ node_modules/.cache/
 .uploads/*
 server/uploads/previews/*
 .test.
+server/print.lsp
