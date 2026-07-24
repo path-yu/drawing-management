@@ -47,3 +47,9 @@ node_modules/.cache/
 *.temp
 *.swp
 *.swo
+*.pdf
+*.dwg
+.env
+.uploads/*
+server/uploads/previews/*
+.test.

@@ -1,8 +1,11 @@
 import { Router } from 'express';
+import fs from 'fs';
+import path from 'path';
 import { db } from '../database/db';
 import { AuthRequest } from '../types';
 import { success, fail } from '../utils/response';
 import { authMiddleware, requirePermission } from '../middleware/auth';
+import { extractTextFromPDF, analyzePDFWithDeepSeek, generatePDFPreview } from '../services/drawingService';
 
 const router = Router();
 const now = () => new Date().toISOString();
@@ -127,6 +130,7 @@ router.post('/', authMiddleware, requirePermission('drawing:create'), (req: Auth
     is_deleted: 0,
     created_at: now(),
     updated_at: now(),
+    flow_direction: b.flow_direction || '右进左出',
   });
 
   res.json(success(drawing, '图纸创建成功'));
@@ -162,6 +166,27 @@ router.put('/:id', authMiddleware, requirePermission('drawing:edit'), (req: Auth
 });
 
 /**
+ * DELETE /api/v1/drawings/batch - 批量删除图纸（软删除）
+ */
+router.delete('/batch', authMiddleware, requirePermission('drawing:delete'), (req: AuthRequest, res) => {
+  const { ids } = req.body;
+  if (!ids || !Array.isArray(ids)) {
+    return res.status(400).json(fail('缺少必填字段: ids（数组）'));
+  }
+
+  let deletedCount = 0;
+  ids.forEach((id: number) => {
+    const existing = db.vessel_drawings.get((d) => d.id === id && d.is_deleted === 0);
+    if (existing) {
+      db.vessel_drawings.update((d) => d.id === id, { is_deleted: 1, updated_at: now() });
+      deletedCount++;
+    }
+  });
+
+  res.json(success({ deleted: deletedCount }, `成功删除 ${deletedCount} 条记录`));
+});
+
+/**
  * DELETE /api/v1/drawings/:id - 删除图纸（软删除）
  */
 router.delete('/:id', authMiddleware, requirePermission('drawing:delete'), (req: AuthRequest, res) => {
@@ -173,6 +198,83 @@ router.delete('/:id', authMiddleware, requirePermission('drawing:delete'), (req:
 
   db.vessel_drawings.update((d) => d.id === id, { is_deleted: 1, updated_at: now() });
   res.json(success(null, '图纸删除成功'));
+});
+
+/**
+ * POST /api/v1/drawings/analyze - 解析图纸内容并入库
+ */
+router.post('/analyze', async (req: AuthRequest, res) => {
+  const { dwg_file_path,file_name,pdfPath} = req.body;
+  
+  if (!pdfPath) {
+    return res.status(400).json(fail('缺少必填字段: pdfPath'));
+  }
+  
+  if (!fs.existsSync(pdfPath)) {
+    return res.status(400).json(fail(`文件不存在: ${pdfPath}`));
+  }
+  
+  try {
+    // 1. 提取PDF文本内容
+    const textContent = await extractTextFromPDF(pdfPath);
+    
+    // 2. 调用DeepSeek API解析
+    const parsedData = await analyzePDFWithDeepSeek(textContent, pdfPath);
+    
+    // 3. 保存原始PDF文件到服务器
+    const pdfDir = path.join(__dirname, '../../uploads/PDF');
+    if (!fs.existsSync(pdfDir)) {
+      fs.mkdirSync(pdfDir, { recursive: true });
+    }
+    const originalFileName = path.basename(pdfPath);
+    const pdfFileName = `${parsedData.material_code}_${Date.now()}_${originalFileName}`;
+    const destPdfPath = path.join(pdfDir, pdfFileName);
+    fs.copyFileSync(pdfPath, destPdfPath);
+    const pdfFilePath = `/uploads/PDF/${pdfFileName}`;
+    
+    // 4. 生成PDF预览图
+    const previewImage = await generatePDFPreview(pdfPath);
+    
+    // 5. 插入数据库
+    const drawing = db.vessel_drawings.insert({
+      material_code: parsedData.material_code,
+      version: parsedData.version || 'V1.0',
+      dwg_file_path: dwg_file_path,
+      file_name: file_name,
+      pdf_file_path: pdfFilePath,
+      preview_image: previewImage,
+      created_by: req.user?.username || '',
+      updated_by: req.user?.username || '',
+      remark: parsedData.remark || null,
+      working_pressure: parsedData.working_pressure,
+      design_pressure: parsedData.design_pressure,
+      design_temperature: parsedData.design_temperature,
+      volume: parsedData.volume,
+      structure_type: parsedData.structure_type,
+      material: parsedData.material,
+      design_life: parsedData.design_life || 20,
+      medium: parsedData.medium,
+      nominal_diameter: parsedData.nominal_diameter,
+      wall_thickness: parsedData.wall_thickness,
+      total_height_or_length: parsedData.total_height_or_length,
+      weight: parsedData.weight,
+      safety_valve_connection: parsedData.safety_valve_connection || null,
+      drain_connection: parsedData.drain_connection || null,
+      inlet_connection: parsedData.inlet_connection || null,
+      outlet_connection: parsedData.outlet_connection || null,
+      inlet_count: parsedData.inlet_count || 1,
+      outlet_count: parsedData.outlet_count || 1,
+      is_deleted: 0,
+      created_at: now(),
+      updated_at: now(),
+      flow_direction: parsedData.flow_direction || '右进左出',
+    });
+    
+    res.json(success(drawing, '图纸解析并入库成功'));
+  } catch (error: any) {
+    console.error('图纸解析失败:', error);
+    res.status(500).json(fail(`解析失败: ${error.message}`));
+  }
 });
 
 export default router;

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Eye, FileText, Edit2, MoreHorizontal, Copy, Check } from 'lucide-react';
+import { Eye, FileText, Edit2, MoreHorizontal, Copy, Check, Trash2, CheckSquare, Square } from 'lucide-react';
 import { VesselDrawing } from '../types';
 
 interface DrawingCardProps {
@@ -7,9 +7,13 @@ interface DrawingCardProps {
   onPreview: (drawing: VesselDrawing) => void;
   onExport: (drawing: VesselDrawing) => void;
   onEdit: (drawing: VesselDrawing) => void;
+  onDelete: (drawing: VesselDrawing) => void;
+  selected?: boolean;
+  onToggleSelect?: (drawing: VesselDrawing) => void;
+  showCheckbox?: boolean;
 }
 
-export function DrawingCard({ drawing, onPreview, onExport, onEdit }: DrawingCardProps) {
+export function DrawingCard({ drawing, onPreview, onExport, onEdit, onDelete, selected = false, onToggleSelect, showCheckbox = false }: DrawingCardProps) {
   const [copied, setCopied] = useState(false);
 
   const handleCopyLink = async () => {
@@ -30,26 +34,46 @@ export function DrawingCard({ drawing, onPreview, onExport, onEdit }: DrawingCar
     }
   };
   return (
-    <div className="card overflow-hidden hover:shadow-md transition-shadow cursor-pointer" onClick={() => onPreview(drawing)}>
-      <div className="relative h-40 bg-slate-100 dark:bg-slate-700 flex items-center justify-center">
-        <svg className="w-full h-full" viewBox="0 0 200 160" fill="none">
-          <rect x="20" y="40" width="160" height="100" rx="8" stroke="#475569" strokeWidth="2" className="dark:stroke-slate-400" />
-          <rect x="30" y="50" width="140" height="80" rx="4" stroke="#94A3B8" strokeWidth="1" className="dark:stroke-slate-500" />
-          <circle cx="100" cy="70" r="25" stroke="#2563EB" strokeWidth="2" fill="none" className="dark:stroke-blue-400" />
-          <line x1="100" y1="70" x2="100" y2="130" stroke="#475569" strokeWidth="2" className="dark:stroke-slate-400" />
-          <rect x="70" y="70" width="60" height="5" rx="2" fill="#F97316" />
-          <rect x="80" y="85" width="40" height="5" rx="2" fill="#64748B" className="dark:fill-slate-400" />
-          <rect x="75" y="100" width="50" height="5" rx="2" fill="#64748B" className="dark:fill-slate-400" />
-          <rect x="85" y="115" width="30" height="5" rx="2" fill="#64748B" className="dark:fill-slate-400" />
-          <text x="100" y="30" textAnchor="middle" fill="#64748B" fontSize="10" fontFamily="sans-serif" className="dark:fill-slate-400">
-            {drawing.material_code}
-          </text>
-        </svg>
+    <div className={`card overflow-hidden hover:shadow-md transition-shadow cursor-pointer ${selected ? 'ring-2 ring-primary-500' : ''}`} onClick={() => onPreview(drawing)}>
+      <div className="relative h-40 bg-slate-100 dark:bg-slate-700 flex items-center justify-center overflow-hidden">
+        {drawing.preview_image ? (
+          <img
+            src={drawing.preview_image}
+            alt={drawing.file_name}
+            className="w-full h-full object-contain"
+          />
+        ) : (
+          <svg className="w-full h-full" viewBox="0 0 200 160" fill="none">
+            <rect x="20" y="40" width="160" height="100" rx="8" stroke="#475569" strokeWidth="2" className="dark:stroke-slate-400" />
+            <rect x="30" y="50" width="140" height="80" rx="4" stroke="#94A3B8" strokeWidth="1" className="dark:stroke-slate-500" />
+            <circle cx="100" cy="70" r="25" stroke="#2563EB" strokeWidth="2" fill="none" className="dark:stroke-blue-400" />
+            <line x1="100" y1="70" x2="100" y2="130" stroke="#475569" strokeWidth="2" className="dark:stroke-slate-400" />
+            <rect x="70" y="70" width="60" height="5" rx="2" fill="#F97316" />
+            <rect x="80" y="85" width="40" height="5" rx="2" fill="#64748B" className="dark:fill-slate-400" />
+            <rect x="75" y="100" width="50" height="5" rx="2" fill="#64748B" className="dark:fill-slate-400" />
+            <rect x="85" y="115" width="30" height="5" rx="2" fill="#64748B" className="dark:fill-slate-400" />
+            <text x="100" y="30" textAnchor="middle" fill="#64748B" fontSize="10" fontFamily="sans-serif" className="dark:fill-slate-400">
+              {drawing.material_code}
+            </text>
+          </svg>
+        )}
         <div className="absolute top-2 right-2">
           <span className={`badge ${drawing.structure_type === '立式' ? 'badge-primary' : 'badge-orange'}`}>
             {drawing.structure_type}
           </span>
         </div>
+        {showCheckbox && onToggleSelect && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onToggleSelect(drawing); }}
+            className={`absolute top-2 left-2 p-1.5 rounded-lg transition-colors ${
+              selected
+                ? 'bg-primary-500 text-white'
+                : 'bg-white/80 text-slate-600 hover:bg-white dark:bg-slate-800/80 dark:text-slate-300 dark:hover:bg-slate-800'
+            }`}
+          >
+            {selected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+          </button>
+        )}
       </div>
 
       <div className="p-4">
@@ -103,13 +127,20 @@ export function DrawingCard({ drawing, onPreview, onExport, onEdit }: DrawingCar
               {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
             </button>
             <button
-              onClick={(e) => { e.stopPropagation(); onEdit(drawing); }}
-              className="p-2 text-slate-600 hover:bg-orange-50 hover:text-orange-600 rounded-lg transition-colors dark:text-slate-300 dark:hover:bg-orange-900/30 dark:hover:text-orange-400"
-              title="编辑"
-            >
-              <Edit2 className="w-4 h-4" />
-            </button>
-          </div>
+            onClick={(e) => { e.stopPropagation(); onEdit(drawing); }}
+            className="p-2 text-slate-600 hover:bg-orange-50 hover:text-orange-600 rounded-lg transition-colors dark:text-slate-300 dark:hover:bg-orange-900/30 dark:hover:text-orange-400"
+            title="编辑"
+          >
+            <Edit2 className="w-4 h-4" />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete(drawing); }}
+            className="p-2 text-slate-600 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors dark:text-slate-300 dark:hover:bg-red-900/30 dark:hover:text-red-400"
+            title="删除"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
           <button 
             onClick={(e) => e.stopPropagation()}
             className="p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 rounded-lg transition-colors dark:text-slate-500 dark:hover:bg-slate-700 dark:hover:text-slate-300"

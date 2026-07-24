@@ -47,20 +47,23 @@ router.post('/register', (req: AuthRequest, res) => {
  * POST /api/v1/auth/login - 用户登录
  */
 router.post('/login', (req, res) => {
-  const { username, password } = req.body;
+  let { username, password } = req.body;
 
   if (!username || !password) {
     return res.status(400).json(fail('用户名和密码不能为空'));
   }
-
+  // 去除空格
+  username = username.trim();
+  password = password.trim();
   const userRow = db.users.get((u) => u.username === username);
+  
   if (!userRow) {
     return res.status(401).json(fail('用户名或密码错误'));
   }
   if (userRow.status === 0) {
     return res.status(403).json(fail('账户已被禁用，请联系管理员'));
   }
-
+  
   if (!bcrypt.compareSync(password, userRow.password)) {
     return res.status(401).json(fail('用户名或密码错误'));
   }

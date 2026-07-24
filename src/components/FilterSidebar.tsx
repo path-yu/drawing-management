@@ -51,7 +51,7 @@ export function FilterSidebar({
   }
 
   return (
-    <aside className="w-80 bg-white border-r border-slate-200 flex flex-col dark:bg-slate-800 dark:border-slate-700">
+    <aside className="w-120 bg-white border-r border-slate-200 flex flex-col dark:bg-slate-800 dark:border-slate-700">
       <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-700">
         <h2 className="font-semibold text-slate-800 flex items-center gap-2 dark:text-slate-100">
           <SlidersHorizontal className="w-4 h-4" />
@@ -66,7 +66,7 @@ export function FilterSidebar({
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="flex-1 overflow-y-auto p-4 scrollbar-hide">
         <div className="mb-5">
           <label className="block text-sm font-medium text-slate-700 mb-2 dark:text-slate-300">结构形式</label>
           <div className="flex gap-2">

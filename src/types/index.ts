@@ -4,6 +4,8 @@ export interface VesselDrawing {
   version: string;
   file_path: string;
   file_name: string;
+  pdf_file_path: string;
+  preview_image: string;
   created_by: string;
   updated_by: string;
   remark: string;
@@ -25,6 +27,7 @@ export interface VesselDrawing {
   outlet_connection: string;
   inlet_count: number;
   outlet_count: number;
+  flow_direction: '右进左出' | '左进右出';
   created_at: string;
   updated_at: string;
 }

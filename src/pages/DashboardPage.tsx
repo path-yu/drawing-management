@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { LayoutGrid, List, SplitSquareVertical, X, Trash2 } from 'lucide-react';
+import { LayoutGrid, List, SplitSquareVertical, X, Trash2, CheckSquare, Square, AlertTriangle } from 'lucide-react';
 import { Header } from '../components/Header';
 import { FilterSidebar } from '../components/FilterSidebar';
 import { DrawingCard } from '../components/DrawingCard';
@@ -50,6 +50,10 @@ export function DashboardPage() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [previewDrawing, setPreviewDrawing] = useState<VesselDrawing | null>(null);
   const [appliedFilters, setAppliedFilters] = useState<string[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<'single' | 'batch'>('single');
+  const [deleteDrawing, setDeleteDrawing] = useState<VesselDrawing | null>(null);
 
   useEffect(() => {
     fetchDrawings();
@@ -127,6 +131,53 @@ export function DashboardPage() {
 
   const handleEdit = (_drawing: VesselDrawing) => {
     alert('编辑图纸功能开发中...');
+  };
+
+  const handleDelete = (drawing: VesselDrawing) => {
+    setDeleteTarget('single');
+    setDeleteDrawing(drawing);
+    setShowConfirmModal(true);
+  };
+
+  const handleToggleSelect = (drawing: VesselDrawing) => {
+    setSelectedIds((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(drawing.id)) {
+        newSet.delete(drawing.id);
+      } else {
+        newSet.add(drawing.id);
+      }
+      return newSet;
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (selectedIds.size === filteredDrawings.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredDrawings.map((d) => d.id)));
+    }
+  };
+
+  const handleBatchDelete = () => {
+    setDeleteTarget('batch');
+    setDeleteDrawing(null);
+    setShowConfirmModal(true);
+  };
+
+  const confirmDelete = async () => {
+    setShowConfirmModal(false);
+    try {
+      if (deleteTarget === 'single' && deleteDrawing) {
+        await api.delete(`/drawings/${deleteDrawing.id}`);
+      } else if (deleteTarget === 'batch') {
+        await api.delete('/drawings/batch', { ids: Array.from(selectedIds) });
+      }
+      setSelectedIds(new Set());
+      fetchDrawings();
+    } catch {
+      alert('删除失败');
+    }
   };
 
   const handleCreate = () => {
@@ -209,6 +260,30 @@ export function DashboardPage() {
             </div>
 
             <div className="flex items-center gap-4">
+              {selectedIds.size > 0 && (
+                <button
+                  onClick={handleBatchDelete}
+                  className="flex items-center gap-2 px-3 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm font-medium"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  删除选中 ({selectedIds.size})
+                </button>
+              )}
+              <button
+                onClick={handleSelectAll}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm font-medium ${
+                  selectedIds.size === filteredDrawings.length && filteredDrawings.length > 0
+                    ? 'bg-primary-500 text-white hover:bg-primary-600'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600'
+                }`}
+              >
+                {selectedIds.size === filteredDrawings.length && filteredDrawings.length > 0 ? (
+                  <CheckSquare className="w-4 h-4" />
+                ) : (
+                  <Square className="w-4 h-4" />
+                )}
+                全选
+              </button>
               <select className="input-field text-sm w-40">
                 <option>按更新时间排序</option>
                 <option>按容积排序</option>
@@ -239,6 +314,10 @@ export function DashboardPage() {
                         onPreview={handlePreview}
                         onExport={handleExport}
                         onEdit={handleEdit}
+                        onDelete={handleDelete}
+                        selected={selectedIds.has(drawing.id)}
+                        onToggleSelect={handleToggleSelect}
+                        showCheckbox={selectedIds.size > 0}
                       />
                     ))}
                   </div>
@@ -321,6 +400,42 @@ export function DashboardPage() {
 
       {previewDrawing && (
         <DrawingPreviewModal drawing={previewDrawing} onClose={() => setPreviewDrawing(null)} />
+      )}
+
+      {showConfirmModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md dark:bg-slate-800">
+            <div className="flex items-center gap-4 mb-4">
+              <div className="p-3 bg-red-100 rounded-full dark:bg-red-900/30">
+                <AlertTriangle className="w-6 h-6 text-red-500" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">
+                  {deleteTarget === 'single' ? '确认删除' : '批量删除'}
+                </h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  {deleteTarget === 'single'
+                    ? `确定要删除 "${deleteDrawing?.file_name}" 吗？`
+                    : `确定要删除选中的 ${selectedIds.size} 条记录吗？`}
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowConfirmModal(false)}
+                className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors text-sm font-medium dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600"
+              >
+                取消
+              </button>
+              <button
+                onClick={confirmDelete}
+                className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm font-medium"
+              >
+                确认删除
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
+import path from 'path';
 import { config } from './config';
 import authRoutes from './routes/authRoutes';
 import userRoutes from './routes/userRoutes';
@@ -9,22 +10,22 @@ import drawingRoutes from './routes/drawingRoutes';
 import { success, fail } from './utils/response';
 // 启动时自动初始化数据库（如果表不存在）
 import './scripts/initDb';
-
 const app = express();
 
 // 中间件
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1')) {
-      callback(null, true);
-    } else {
-      callback(null, config.corsOrigin);
-    }
+  // 允许任何来源的请求
+       callback(null, true);
   },
   credentials: true,
 }));
 app.use(express.json());
 app.use(morgan('dev'));
+
+// 静态文件服务 - 预览图和上传文件
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+
 
 // 健康检查
 app.get('/api/health', (req, res) => {

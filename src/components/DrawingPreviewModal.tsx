@@ -176,7 +176,7 @@ export function DrawingPreviewModal({ drawing, onClose }: DrawingPreviewModalPro
             </div>
           </div>
 
-          <div className="w-80 border-l border-slate-200 flex flex-col dark:border-slate-700">
+          <div className="w-100 border-l border-slate-200 flex flex-col dark:border-slate-700">
             <div className="flex border-b border-slate-200 dark:border-slate-700">
               {tabs.map((tab) => (
                 <button
