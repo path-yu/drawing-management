@@ -100,7 +100,8 @@ router.post('/', authMiddleware, requirePermission('drawing:create'), (req: Auth
       return res.status(400).json(fail(`缺少必填字段: ${field}`));
     }
   }
-
+  // 是否为卧式罐
+  const isHorizontal = b.file_name?.startsWith('W');
   const drawing = db.vessel_drawings.insert({
     material_code: b.material_code,
     version: b.version || 'V1.0',
@@ -130,7 +131,7 @@ router.post('/', authMiddleware, requirePermission('drawing:create'), (req: Auth
     is_deleted: 0,
     created_at: now(),
     updated_at: now(),
-    flow_direction: b.flow_direction || '右进左出',
+    flow_direction: isHorizontal ? null : b.flow_direction || '右进左出',
   });
 
   res.json(success(drawing, '图纸创建成功'));
@@ -204,34 +205,34 @@ router.delete('/:id', authMiddleware, requirePermission('drawing:delete'), (req:
  * POST /api/v1/drawings/analyze - 解析图纸内容并入库
  */
 router.post('/analyze', async (req: AuthRequest, res) => {
-  const { dwg_file_path,file_name,pdfPath} = req.body;
-  
+  const { dwg_file_path, file_name, pdfPath } = req.body;
+
   if (!pdfPath) {
     return res.status(400).json(fail('缺少必填字段: pdfPath'));
   }
-  
+
   if (!fs.existsSync(pdfPath)) {
     return res.status(400).json(fail(`文件不存在: ${pdfPath}`));
   }
-  
+
   try {
     // 1. 提取PDF文本内容
     const textContent = await extractTextFromPDF(pdfPath);
-    
+
     // 2. 调用DeepSeek API解析
     const parsedData = await analyzePDFWithDeepSeek(textContent, pdfPath);
-    
+
     // 3. 保存原始PDF文件到服务器（检查是否已在服务器目录中，避免重复复制）
     const pdfDir = path.join(__dirname, '../../uploads/PDF');
     if (!fs.existsSync(pdfDir)) {
       fs.mkdirSync(pdfDir, { recursive: true });
     }
-    
+
     const originalFileName = path.basename(pdfPath);
     // 检查文件是否已经在服务器目录中
     const existingPath = path.join(pdfDir, originalFileName);
     let pdfFilePath: string;
-    
+
     if (fs.existsSync(existingPath)) {
       // 文件已存在，直接使用，不再重复复制
       pdfFilePath = `/uploads/PDF/${originalFileName}`;
@@ -242,14 +243,15 @@ router.post('/analyze', async (req: AuthRequest, res) => {
       fs.copyFileSync(pdfPath, destPdfPath);
       pdfFilePath = `/uploads/PDF/${pdfFileName}`;
     }
-    
+
     // 4. 生成PDF预览图
-    const previewImage = await generatePDFPreview(pdfPath);
-    
+    const previewImage = await generatePDFPreview(pdfPath, parsedData.version || '1');
+
     // 5. 插入数据库
+    parsedData.remark = `${parsedData.remark, file_name.includes('安全阀侧放') || file_name?.toLowerCase().includes('aqfcf') ? '安全阀侧放' : ''}`
     const drawing = db.vessel_drawings.insert({
       material_code: parsedData.material_code,
-      version: parsedData.version || 'V1.0',
+      version: parsedData.version || '1',
       dwg_file_path: dwg_file_path,
       file_name: file_name,
       pdf_file_path: pdfFilePath,
@@ -263,7 +265,7 @@ router.post('/analyze', async (req: AuthRequest, res) => {
       volume: parsedData.volume,
       structure_type: parsedData.file_name?.startsWith('W') ? '卧式' : '立式',
       material: parsedData.material,
-      design_life: parsedData.design_life || 20,
+      design_life: parsedData.design_life || 10,
       medium: parsedData.medium,
       nominal_diameter: parsedData.nominal_diameter,
       wall_thickness: parsedData.wall_thickness,
@@ -280,12 +282,56 @@ router.post('/analyze', async (req: AuthRequest, res) => {
       updated_at: now(),
       flow_direction: parsedData.flow_direction || '右进左出',
     });
-    
+    //写入日志表记录
+    db.vessel_logs.insert({
+      action: 'analyze',
+      user_id: req.user?.id || 0,
+      log_message: `解析图纸 ${file_name} 并入库`,
+      created_at: now(),
+      updated_at: now(),
+      drawing_id: drawing.id,
+      version: '1',
+      remark: "",
+    });
     res.json(success(drawing, '图纸解析并入库成功'));
   } catch (error: any) {
     console.error('图纸解析失败:', error);
     res.status(500).json(fail(`解析失败: ${error.message}`));
   }
+});
+// 更新图纸内容入库
+router.post('/update', async (req: AuthRequest, res) => {
+  const { id, version, remark, pdfPath } = req.body;
+
+  if (!id || !version || !remark || !pdfPath) {
+    return res.status(400).json(fail('缺少必填字段: id, version, remark, pdf_file_path'));
+  }
+  try {
+    const textContent = await extractTextFromPDF(pdfPath);
+    //调用DeepSeek API解析
+    const parsedData = await analyzePDFWithDeepSeek(textContent, pdfPath);
+    // 更新数据库
+    db.vessel_drawings.update((d) => d.id === id, { version, updated_at: now(), remark: parsedData.remark || null });
+    //生成PDF预览图
+    const previewImage = await generatePDFPreview(pdfPath, version);
+    db.vessel_drawings.update((d) => d.id === id, { ...parsedData, version, updated_at: now(), preview_image: previewImage, pdf_file_path: pdfPath, });
+
+    // 插入日志表记录
+    db.vessel_logs.insert({
+      action: 'update',
+      drawing_id: id,
+      log_message: `更新图纸 ${version} ${remark}`,
+      created_at: now(),
+      updated_at: now(),
+      version,
+      remark,
+    });
+    res.json(success(null, '图纸更新成功'));
+  } catch (error: any) {
+    console.error('图纸更新失败:', error);
+    res.status(500).json(fail(`更新失败: ${error.message}`));
+  }
+
 });
 
 export default router;

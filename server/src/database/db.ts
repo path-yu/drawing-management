@@ -15,6 +15,7 @@ interface DbSchema {
   users: any[];
   vessel_drawings: any[];
   counters: Record<string, number>;
+  vessel_logs: any[];
 }
 
 const dbDir = path.dirname(config.dbPath);
@@ -32,6 +33,7 @@ const emptyDb: DbSchema = {
   users: [],
   vessel_drawings: [],
   counters: {},
+  vessel_logs: [],
 };
 
 // 加载或创建数据库文件
@@ -51,12 +53,10 @@ function persist() {
   fs.writeFileSync(dbFile, JSON.stringify(data, null, 2), 'utf-8');
 }
 
-// 生成自增ID
-function nextId(table: string): number {
-  if (!data.counters[table]) {
-    data.counters[table] = 1;
-  }
-  return data.counters[table]++;
+// 生成唯一ID
+function generateId(): string {
+ const id = crypto.randomUUID();
+ return id;
 }
 
 /**
@@ -82,7 +82,7 @@ class Table<T extends { id: number }> {
   }
 
   insert(row: Omit<T, 'id'>): T {
-    const newRow = { ...row, id: nextId(this.tableName) } as T;
+    const newRow = { ...row, id: generateId() } as unknown as T;
     this.rows.push(newRow);
     persist();
     return newRow;
@@ -120,6 +120,7 @@ export const db = {
   role_permissions: new Table<any>('role_permissions'),
   users: new Table<any>('users'),
   vessel_drawings: new Table<any>('vessel_drawings'),
+  vessel_logs: new Table<any>('vessel_logs'),
 
   // 获取原始数据（用于复杂查询）
   raw: () => data,

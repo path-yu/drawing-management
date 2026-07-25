@@ -1024,10 +1024,10 @@
 ;;      完成完调用后端 API 分析接口
 ;; ==========================================================
 (defun c:BESA_A4 (/ dwg_fullname dwg_name output_dir target_pdf_path temp_dir 
-                   pdf_list box_list final_list ss i ent obj ll ur minpt maxpt 
-                   w h area ratio target_size cx cy idx custom_name default_generated 
-                   temp_pdf output_pdf cmd_line shell_obj f_box f_p1 f_p2 is_inside 
-                   page_count box dwg_path file_name
+                  pdf_list box_list final_list ss i ent obj ll ur minpt maxpt w h area 
+                  ratio target_size cx cy idx custom_name default_generated temp_pdf 
+                  output_pdf cmd_line shell_obj f_box f_p1 f_p2 is_inside page_count 
+                  box dwg_path file_name
                  ) 
   (vl-load-com)
   (setvar "CMDECHO" 0)
@@ -1035,10 +1035,11 @@
   ;; 1. 获取当前 DWG 信息及设置导出目录
   (setq dwg_path (getvar "DWGPREFIX"))
   (setq dwg_fullname (getvar "DWGNAME"))
-  (if (or (= dwg_fullname "") 
-          (= dwg_fullname "Drawing1.dwg") 
-          (= dwg_fullname "Drawing2.dwg")
-      ) 
+  (if 
+    (or (= dwg_fullname "") 
+        (= dwg_fullname "Drawing1.dwg")
+        (= dwg_fullname "Drawing2.dwg")
+    )
     (progn 
       (setq dwg_name "未命名图纸")
       (setq file_name "未命名图纸.dwg")
@@ -1158,9 +1159,14 @@
               (export_single_pdf ent minpt maxpt target_size dwg_name)
 
               ;; 若出图函数默认导出了桌面，将其移动至指定的目标目录
-              (setq default_generated (strcat (getenv "USERPROFILE") "\\Desktop\\" dwg_name ".pdf"))
-              (if (findfile default_generated)
-                (progn
+              (setq default_generated (strcat (getenv "USERPROFILE") 
+                                              "\\Desktop\\"
+                                              dwg_name
+                                              ".pdf"
+                                      )
+              )
+              (if (findfile default_generated) 
+                (progn 
                   (if (findfile target_pdf_path) (vl-file-delete target_pdf_path))
                   (vl-file-copy default_generated target_pdf_path)
                   (vl-file-delete default_generated)
@@ -1171,8 +1177,13 @@
               (princ (strcat "\n[导出完成！] 单页 A4 PDF 已保存至: " target_pdf_path))
               (princ "\n==================================================\n")
 
-              ;; 发送 HTTP POST 回调请求
-              (send_api_analyze (strcat dwg_path file_name) file_name target_pdf_path)
+              ;; 修改后：传入单张图纸的实体 (list (nth 1 box))
+              (send_api_analyze 
+                (strcat dwg_path file_name)
+                file_name
+                target_pdf_path
+                (list (nth 1 box))
+              )
             )
 
             ;; ==========================================================
@@ -1215,7 +1226,12 @@
 
                 (export_single_pdf ent minpt maxpt target_size custom_name)
 
-                (setq default_generated (strcat (getenv "USERPROFILE") "\\Desktop\\" custom_name ".pdf"))
+                (setq default_generated (strcat (getenv "USERPROFILE") 
+                                                "\\Desktop\\"
+                                                custom_name
+                                                ".pdf"
+                                        )
+                )
                 (setq temp_pdf (strcat temp_dir custom_name ".pdf"))
 
                 (if (findfile default_generated) 
@@ -1234,9 +1250,18 @@
               ;; 调用 PDF24 进行静默合并至指定的 target_pdf_path
               (if (> (length pdf_list) 0) 
                 (progn 
-                  (princ (strcat "\n[合并中...] 正在合并 " (itoa (length pdf_list)) " 页 A4 PDF..."))
+                  (princ 
+                    (strcat "\n[合并中...] 正在合并 " 
+                            (itoa (length pdf_list))
+                            " 页 A4 PDF..."
+                    )
+                  )
 
-                  (setq cmd_line (strcat "pdf24-DocTool.exe -join -profile none -outputFile \"" target_pdf_path "\""))
+                  (setq cmd_line (strcat "pdf24-DocTool.exe -join -profile none -outputFile \"" 
+                                         target_pdf_path
+                                         "\""
+                                 )
+                  )
 
                   (foreach pdf pdf_list 
                     (setq cmd_line (strcat cmd_line " \"" pdf "\""))
@@ -1256,7 +1281,11 @@
                   (princ "\n==================================================\n")
 
                   ;; 发送 HTTP POST 回调请求
-                  (send_api_analyze (strcat dwg_path file_name) file_name target_pdf_path)
+                  (send_api_analyze 
+                    (strcat dwg_path file_name)
+                    file_name
+                    target_pdf_path
+                  )
                 )
                 (princ "\n[错误] 临时单页 PDF 生成失败。")
               )
@@ -1273,9 +1302,9 @@
 )
 
 ;; ==========================================================
-;; 辅助函数：发送 HTTP POST 请求推送分析数据
+;; 辅助函数：发送 HTTP POST 请求推送分析数据并绑定 ID & Version
 ;; ==========================================================
-(defun send_api_analyze (dwg_file_path file_name pdf_path / http_obj url json_body response_text)
+(defun send_api_analyze (dwg_file_path file_name pdf_path ent_list / http_obj url json_body response_text returned_id returned_version)
   (vl-load-com)
   (setq url "http://192.168.110.188:3000/api/v1/drawings/analyze")
 
@@ -1307,13 +1336,25 @@
         '(lambda ()
            ;; 打开 POST 链接
            (vlax-invoke-method http_obj 'open "POST" url :vlax-false)
-           ;; 设置 RequestHeader
            (vlax-invoke-method http_obj 'setRequestHeader "Content-Type" "application/json; charset=utf-8")
-           ;; 发送 Body 数据
            (vlax-invoke-method http_obj 'send json_body)
-           ;; 获取返回响应
+           
+           ;; 获取响应数据
            (setq response_text (vlax-get-property http_obj 'responseText))
            (princ (strcat "\n[API 请求成功] 接口返回: " response_text))
+
+           ;; ★ 解析返回的数据中的 "id" 与 "version"
+           (setq returned_id (GetJsonKeyValue response_text "id"))
+           (setq returned_version (GetJsonKeyValue response_text "version"))
+
+           (if returned_id
+             (progn
+               (foreach ent ent_list
+                 (WriteDrawingDbIdAndVersion ent returned_id returned_version)
+               )
+             )
+             (princ "\n[警告] 接口返回数据中未解析到有效的 id 字段。")
+           )
          )
       )
       (vlax-release-object http_obj)
@@ -1393,6 +1434,257 @@
   (vlax-release-object shell)
   path
 )
+;; 1. 注册扩展数据应用程序名称 (只需执行一次)
+(regapp "MY_DB_APP")
 
+;; ==========================================================
+;; 扩展数据(XData)辅助函数：给图框实体写入数据库编号 ID
+;; ==========================================================
+(regapp "MY_DB_APP")
+
+;; ==========================================================
+;; 扩展数据(XData)辅助函数：同时写入 id 和 version
+;; ==========================================================
+(regapp "MY_DB_APP")
+
+(defun WriteDrawingDbIdAndVersion (ent db_id version_val / elist xdata)
+  (if (and ent (entget ent) db_id (/= db_id ""))
+    (progn
+      ;; 如果未获取到 version，默认赋值 "1.0" 或空值
+      (if (or (null version_val) (= version_val "")) 
+        (setq version_val "1.0")
+      )
+      
+      ;; 构造包含 ID 和 Version 的 XData 列表
+      ;; 组码 1000 保存 id，下一个 1000 保存 version
+      (setq xdata (list "MY_DB_APP" 
+                        (cons 1000 db_id) 
+                        (cons 1000 version_val)))
+      
+      (setq elist (entget ent))
+      ;; 追加并覆写 -3 扩展数据节点
+      (entmod (append elist (list (list -3 xdata))))
+      (princ (strcat "\n[XData 写入成功] ID: " db_id " | 版本: " version_val))
+      ;; ★ 核心新增：数据写入成功后，立刻静默保存 DWG 文件
+      (vl-cmdf "_.QSAVE")
+      (princ "\n[图纸自动保存完成]")
+    )
+  )
+)
+
+;; 通用提取 JSON 字符串中指定 key 值的辅助函数
+(defun GetJsonKeyValue (json_str key_name / pos1 pos2 val search_key)
+  (setq val nil)
+  (setq search_key (strcat "\"" key_name "\":"))
+  (if (and json_str (setq pos1 (vl-string-search search_key json_str)))
+    (progn
+      ;; 截取 key 之后的内容
+      (setq json_str (substr json_str (+ pos1 (strlen search_key))))
+      ;; 找到双引号起始位置
+      (if (setq pos1 (vl-string-search "\"" json_str))
+        (progn
+          (setq json_str (substr json_str (+ pos1 2)))
+          ;; 找到双引号闭合位置
+          (if (setq pos2 (vl-string-search "\"" json_str))
+            (setq val (substr json_str 1 pos2))
+          )
+        )
+      )
+    )
+  )
+  val
+)
 (princ "\n--- 浩辰 CAD 批量文件夹导出命令 [ BATCH_BESA ] 加载成功 ---")
 (princ)
+;; ==========================================================
+;; 扩展数据(XData)辅助函数：查询图框实体绑定的数据库编号 ID 和版本号
+;; ==========================================================
+(defun c:CheckXData ( / ent xdata data_list id_val ver_val)
+  (if (setq ent (car (entsel "\n请选择要查询的图框: ")))
+    (progn
+      ;; 读取 AppID 为 "MY_DB_APP" 的扩展数据
+      (setq xdata (cdr (assoc -3 (entget ent '("MY_DB_APP")))))
+      (if xdata
+        (progn
+          (setq data_list (cdar xdata)) ; 获取数据列表
+          ;; 过滤出所有组码为 1000 的项
+          (setq data_list (vl-remove-if-not '(lambda (x) (= (car x) 1000)) data_list))
+          (setq id_val (cdr (nth 0 data_list)))
+          (setq ver_val (cdr (nth 1 data_list)))
+          
+          (alert (strcat "图框绑定信息如下：\n\n数据库 ID: " (if id_val id_val "无")
+                         "\n版本号 Version: " (if ver_val ver_val "无")))
+        )
+        (alert "该图框暂未绑定任何扩展数据 (XData)！")
+      )
+    )
+  )
+  (princ)
+)
+;; ==========================================================
+;; 辅助函数：纯数字版本号递增 (例如 "1" -> "2")
+;; ==========================================================
+(defun IncrementVersionNum (ver_str / num)
+  (if (or (null ver_str) (= ver_str ""))
+    "1"
+    (progn
+      ;; 提取纯数字并加 1
+      (setq num (atoi ver_str))
+      (if (<= num 0)
+        "1"
+        (itoa (1+ num))
+      )
+    )
+  )
+)
+;; ==========================================================
+;; 新增主命令：BESA_UPDATE (更新图纸内容与纯数字版本)
+;; ==========================================================
+(defun c:BESA_UPDATE (/ ss ent xdata data_list db_id old_version new_version remark 
+                        dwg_path dwg_fullname dwg_name file_name output_dir 
+                        pdf_name target_pdf_path default_generated obj ll ur minpt maxpt
+                      )
+  (vl-load-com)
+  (setvar "CMDECHO" 0)
+
+  (princ "\n请选择要更新版本的图框实体...")
+  (if (setq ss (ssget ":S" '((0 . "LWPOLYLINE,REGION,INSERT"))))
+    (progn
+      (setq ent (ssname ss 0))
+      
+      ;; 1. 读取实体绑定的 XData (MY_DB_APP)
+      (setq xdata (cdr (assoc -3 (entget ent '("MY_DB_APP")))))
+      
+      (if xdata
+        (progn
+          (setq data_list (cdar xdata))
+          (setq data_list (vl-remove-if-not '(lambda (x) (= (car x) 1000)) data_list))
+          (setq db_id (cdr (nth 0 data_list)))
+          (setq old_version (cdr (nth 1 data_list)))
+
+          (if (and db_id (/= db_id ""))
+            (progn
+              ;; 2. 计算纯数字新版本号 (例: "1" -> "2")
+              (if (or (null old_version) (= old_version "")) 
+                (setq old_version "1")
+              )
+              (setq new_version (IncrementVersionNum old_version))
+
+              (princ (strcat "\n[当前数据库ID]: " db_id))
+              (princ (strcat "\n[旧版本]: " old_version "  ==>  [新版本]: " new_version))
+
+              ;; 3. 提示用户输入更新备注 remark
+              (setq remark (getstring T "\n请输入本次更新的修改备注(Remark): "))
+              (if (= remark "") (setq remark "版本迭代更新"))
+
+              ;; 4. 获取路径并构造 PDF 名称 (例如: 容器设计图_v2.pdf)
+              (setq dwg_path (getvar "DWGPREFIX"))
+              (setq dwg_fullname (getvar "DWGNAME"))
+              (setq dwg_name (vl-filename-base dwg_fullname))
+              (setq file_name dwg_fullname)
+
+              (setq output_dir "D:\\GitCode\\drawing-management\\server\\uploads\\PDF")
+              (if (not (vl-file-directory-p output_dir)) (vl-mkdir output_dir))
+
+              ;; 导出的 PDF 文件名格式: 文件名_v纯数字版本
+              (setq pdf_name (strcat dwg_name "_v" new_version))
+              (setq target_pdf_path (strcat output_dir "\\" pdf_name ".pdf"))
+
+              ;; 5. 重新导出 PDF
+              (setq obj (vlax-ename->vla-object ent))
+              (vla-getboundingbox obj 'll 'ur)
+              (setq minpt (vlax-safearray->list ll)
+                    maxpt (vlax-safearray->list ur)
+              )
+
+              (export_single_pdf ent minpt maxpt "A4" pdf_name)
+
+              ;; 若导出到了桌面，移动到 uploads 目标目录
+              (setq default_generated (strcat (getenv "USERPROFILE") "\\Desktop\\" pdf_name ".pdf"))
+              (if (findfile default_generated)
+                (progn
+                  (if (findfile target_pdf_path) (vl-file-delete target_pdf_path))
+                  (vl-file-copy default_generated target_pdf_path)
+                  (vl-file-delete default_generated)
+                )
+              )
+
+              ;; 6. 发送 API 更新请求 (传递纯数字 version)
+              (send_api_update (strcat dwg_path file_name)
+                               file_name
+                               target_pdf_path
+                               db_id
+                               new_version
+                               remark
+                               (list ent)
+              )
+
+              (princ "\n==================================================")
+              (princ (strcat "\n[更新完成！] 图纸版本已更新为 " new_version " 并已自动保存DWG文件。"))
+              (princ "\n==================================================\n")
+            )
+            (alert "错误：该图框绑定的数据库 ID 为空，无法更新！")
+          )
+        )
+        (alert "错误：所选图框未绑定任何数据库信息，请先使用 BESA_A4 命令进行首次入库！")
+      )
+    )
+    (princ "\n[取消] 未选择图框。")
+  )
+  (setvar "CMDECHO" 1)
+  (princ)
+)
+;; ==========================================================
+;; 辅助函数：更新图纸后端接口推送 (支持 id, version, remark)
+;; ==========================================================
+(defun send_api_update (dwg_file_path file_name pdf_path db_id version remark ent_list / http_obj url json_body response_text)
+  (vl-load-com)
+  (setq url "http://192.168.110.188:3000/api/v1/drawings/update")
+
+  ;; 路径格式化，转义反斜杠
+  (setq dwg_file_path (vl-string-translate "\\" "/" dwg_file_path))
+  (setq pdf_path (vl-string-translate "\\" "/" pdf_path))
+
+  ;; 拼接包含 id, version, remark 的 JSON 请求体
+  (setq json_body 
+        (strcat "{"
+                "\"id\":\"" db_id "\","
+                "\"version\":\"" version "\","
+                "\"remark\":\"" remark "\","
+                "\"dwg_file_path\":\"" dwg_file_path "\","
+                "\"file_name\":\"" file_name "\","
+                "\"pdfPath\":\"" pdf_path "\""
+                "}"
+        )
+  )
+
+  (princ "\n[API 更新中...] 正在向后台提交新版本数据...")
+
+  ;; 创建 HTTP 组件
+  (setq http_obj (vl-catch-all-apply 'vlax-create-object '("MSXML2.ServerXMLHTTP.6.0")))
+  (if (vl-catch-all-error-p http_obj)
+    (setq http_obj (vlax-create-object "WinHttp.WinHttpRequest.5.1"))
+  )
+
+  (if http_obj
+    (progn
+      (vl-catch-all-apply
+        '(lambda ()
+           (vlax-invoke-method http_obj 'open "POST" url :vlax-false)
+           (vlax-invoke-method http_obj 'setRequestHeader "Content-Type" "application/json; charset=utf-8")
+           (vlax-invoke-method http_obj 'send json_body)
+           
+           (setq response_text (vlax-get-property http_obj 'responseText))
+           (princ (strcat "\n[API 更新成功] 接口返回: " response_text))
+
+           ;; 接口推送成功后，将新的版本号更新回 CAD 图框 XData
+           (foreach ent ent_list
+             (WriteDrawingDbIdAndVersion ent db_id version)
+           )
+         )
+      )
+      (vlax-release-object http_obj)
+    )
+    (princ "\n[API 请求失败] 无法创建 HTTP 请求组件。")
+  )
+)

@@ -15,7 +15,7 @@ if (!fs.existsSync(PREVIEW_DIR)) {
 
 
 // 生成PDF预览图（第一页）
-export async function generatePDFPreview(pdfPath: string): Promise<string> {
+export async function generatePDFPreview(pdfPath: string,version:string): Promise<string> {
     const data = new Uint8Array(fs.readFileSync(pdfPath));
     const pdf = await pdfjsLib.getDocument({ data }).promise;
     
@@ -38,7 +38,7 @@ export async function generatePDFPreview(pdfPath: string): Promise<string> {
     
     // 生成文件名（使用时间戳和原始文件名）
     const originalName = path.basename(pdfPath, '.pdf');
-    const previewFileName = `${originalName}_${Date.now()}.png`;
+    const previewFileName = `${originalName}.png`;
     const previewPath = path.join(PREVIEW_DIR, previewFileName);
     
     // 保存为PNG
@@ -94,7 +94,7 @@ export async function extractTextFromPDF(filePath: string): Promise<string[]> {
 
 async function callDeepSeekAPI(messages: any[]): Promise<string> {
     const payload = {
-        model: 'deepseek-chat',
+        model: 'deepseek-v4-flash',
         messages: messages
     };
 
@@ -190,7 +190,6 @@ export async function analyzePDFWithDeepSeek(pagesText: string[], filePath: stri
 
 1. medium: 介质名称，储气罐通常为"空气"
 2. wall_thickness: 壁厚，公称直径尺寸线立式（左侧or右侧），卧式（上面or下面）附近查找板厚标注，提取该具体数值
-3. remark: 备注，包含图纸日期等信息
 
 flow_direction的值必须严格判断为 "右进左出" 或 "左进右出"。
 1. 先查看"管口表"，找到用途为"进气口"的管口序号（例如 N6）。

@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { ZoomIn, ZoomOut, Maximize2, Download, Copy, FileText, Layers, Ruler, ChevronLeft, ChevronRight, FileImage } from 'lucide-react';
 import { VesselDrawing } from '../types';
 import { Modal } from './Modal';
 import { PDFPreview } from './PDFPreview';
+import { api } from '../utils/api';
 
 interface DrawingPreviewModalProps {
   drawing: VesselDrawing | null;
@@ -13,6 +14,13 @@ export function DrawingPreviewModal({ drawing, onClose }: DrawingPreviewModalPro
   const [activeTab, setActiveTab] = useState<'params' | 'connections' | 'history'>('params');
   const [previewMode, setPreviewMode] = useState<'svg' | 'pdf'>('svg');
   const [zoom, setZoom] = useState(100);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [currentPreviewUrl, setCurrentPreviewUrl] = useState('');
+  const [currentVersion, setCurrentVersion] = useState('1');
+  useEffect(() => {
+    setCurrentPreviewUrl(drawing?.preview_image || '');
+    setCurrentVersion(drawing?.version || '1');
+  }, [drawing]);
 
   const safeNumber = (value: number | null | undefined, decimals: number = 0): string => {
     if (value === null || value === undefined) return '-';
@@ -30,13 +38,195 @@ export function DrawingPreviewModal({ drawing, onClose }: DrawingPreviewModalPro
     { id: 'history', label: '历史版本与变更记录' },
   ] as const;
 
-  const versionHistory = [
-    { version: 'V1.2', date: '2024-02-15', operator: '赵六', changes: '更新设计压力参数' },
-    { version: 'V1.1', date: '2024-02-01', operator: '张三', changes: '修正壁厚尺寸' },
-    { version: 'V1.0', date: '2024-01-15', operator: '张三', changes: '初始版本创建' },
-  ];
+  const [versionHistory, setVersionHistory] = useState<any[]>([]);
+
+  // 编辑备注弹窗状态
+  const [editingLog, setEditingLog] = useState<any>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editRemark, setEditRemark] = useState('');
 
   if (!drawing) return null;
+  // 拖拽移动
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+
+  // Refs 用来获取 DOM 元素的真实尺寸以计算边界
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLImageElement | null>(null);
+  const dragStartRef = useRef<{ mouseX: number, mouseY: number, startX: number, startY: number }>({ mouseX: 0, mouseY: 0, startX: 0, startY: 0 });
+
+  // 获取历史版本记录
+  const getVesselLogList = async () => {
+    if (!drawing) return;
+    try {
+      const response = await api.get(`/logs/list?drawing_id=${drawing.id}`);
+      if (response.code === 200 && response.data.list) {
+        setVersionHistory(response.data.list);
+      }
+    } catch (error) {
+      console.error('获取日志列表失败:', error);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'history' && drawing) {
+      getVesselLogList();
+    }
+  }, [activeTab, drawing]);
+
+  // 编辑备注
+  const handleEditRemark = (log: any) => {
+    setEditingLog(log);
+    setEditRemark(log.remark ? log.remark || '' : log.log_message || '');
+    setShowEditModal(true);
+  };
+
+  // 保存备注
+  const handleSaveRemark = async () => {
+    if (!editingLog) return;
+    try {
+      const response = await api.put(`/logs/${editingLog.id}`, { remark: editRemark });
+      if (response.code === 200) {
+        setShowEditModal(false);
+        // 更新本地列表
+        setVersionHistory(prev => prev.map(item =>
+          item.id === editingLog.id ? { ...item, remark: editRemark } : item
+        ));
+      }
+    } catch (error) {
+      console.error('更新备注失败:', error);
+    }
+  };
+
+  // 1. 鼠标按下：记录起始点（只记录一次，不要在 mousemove 里更新它！）
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+
+    // 记录按下瞬间的：1. 鼠标屏幕坐标  2. 图纸当时的偏移位置
+    dragStartRef.current = {
+      mouseX: e.clientX,
+      mouseY: e.clientY,
+      startX: position.x,
+      startY: position.y
+    };
+  };
+  // 新增：响应鼠标滚轮事件（代替原生 scrollbar 滚动）
+  const handleWheel = (e: React.WheelEvent) => {
+    // 阻止页面整体滚动
+    e.preventDefault();
+
+    if (!containerRef.current || !contentRef.current) return;
+
+    const containerRect = containerRef.current.getBoundingClientRect();
+    const contentRect = contentRef.current.getBoundingClientRect();
+
+    // 只有当放大后的内容高度超出容器时，滚轮滚动才生效
+    if (contentRect.height <= containerRect.height) return;
+
+    // e.deltaY > 0 表示向下滚动（内容应该向上移，即 position.y 减小）
+    // 50 是滚轮滚动的灵敏度系数，可根据习惯调整
+    const scrollSpeed = 50;
+    const deltaY = e.deltaY > 0 ? -scrollSpeed : scrollSpeed;
+
+    let targetY = position.y + deltaY;
+
+    // 应用与 handleMouseMove 完全一致的精准物理边界限制
+    const futureTop = contentRect.top + deltaY;
+    const futureBottom = contentRect.bottom + deltaY;
+
+    if (futureTop > containerRect.top) {
+      targetY = position.y + (containerRect.top - contentRect.top);
+    } else if (futureBottom < containerRect.bottom) {
+      targetY = position.y + (containerRect.bottom - contentRect.bottom);
+    }
+
+    setPosition((prev) => ({ ...prev, y: targetY }));
+  };
+  // 2. 鼠标移动：基于真实物理边界计算（彻底解决单侧拖不动、看不到边缘的问题）
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging || !containerRef.current || !contentRef.current) return;
+
+    // 1. 鼠标本次想移动到的“理想目标位置”
+    const deltaX = e.clientX - dragStartRef.current.mouseX;
+    const deltaY = e.clientY - dragStartRef.current.mouseY;
+
+    let targetX = dragStartRef.current.startX + deltaX;
+    let targetY = dragStartRef.current.startY + deltaY;
+
+    // 2. 获取【容器】和【图纸当前实际渲染位置】的矩形数据
+    const containerRect = containerRef.current.getBoundingClientRect();
+    const contentRect = contentRef.current.getBoundingClientRect();
+
+    // ==================== Y 轴物理边界 (解决下方卡死关键) ====================
+    if (contentRect.height <= containerRect.height) {
+      // 如果整体高度比容器小，不给拖，留在原位
+      targetY = 0;
+    } else {
+      /* 
+        关键逻辑：
+        - 向上拖（Show Bottom）：图纸底部 (contentRect.bottom) 决不能高于 容器底部 (containerRect.bottom)
+        - 向下拖（Show Top）   ：图纸顶部 (contentRect.top)    决不能低于 容器顶部 (containerRect.top)
+      */
+
+      // 计算当前 targetY 相对于当前 position.y 的偏差
+      const diffY = targetY - position.y;
+
+      // 预判移动后的上/下边缘屏幕坐标
+      const futureTop = contentRect.top + diffY;
+      const futureBottom = contentRect.bottom + diffY;
+
+      // 限制 1: 下拉过度（导致顶部露白）
+      if (futureTop > containerRect.top) {
+        targetY = position.y + (containerRect.top - contentRect.top);
+      }
+      // 限制 2: 上拉过度（导致底部露白，这就是你之前卡死的原因！）
+      else if (futureBottom < containerRect.bottom) {
+        targetY = position.y + (containerRect.bottom - contentRect.bottom);
+      }
+    }
+
+    // ==================== X 轴物理边界 ====================
+    if (contentRect.width <= containerRect.width) {
+      targetX = 0;
+    } else {
+      const diffX = targetX - position.x;
+      const futureLeft = contentRect.left + diffX;
+      const futureRight = contentRect.right + diffX;
+
+      if (futureLeft > containerRect.left) {
+        targetX = position.x + (containerRect.left - contentRect.left);
+      } else if (futureRight < containerRect.right) {
+        targetX = position.x + (containerRect.right - contentRect.right);
+      }
+    }
+
+    setPosition({ x: targetX, y: targetY });
+  };
+  // 3. 鼠标抬起/离开：结束拖拽
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  // 双击重置位置
+  const handleDoubleClick = () => {
+    setPosition({ x: 0, y: 0 });
+  };
+  // 
+  const handlePreviewItemClick = (item: any) => {
+    setCurrentVersion(item.version);
+    // 获取当前图纸的文件名
+    if (item.version == '1') {
+      // "/uploads/previews/CQG10-0.88（DN125JC,20年）_v2.png", 去掉_v${item.version}.png
+      // 匹配 _v 后跟一个或多个数字
+      const result = drawing.preview_image.replace(/_v\d+/g, "");
+      setCurrentPreviewUrl(result);
+    }else{
+     // 读取文件名，去掉dwg后缀名
+     const fileNameWithoutExtension = drawing.file_name.replace('.dwg', '');
+     setCurrentPreviewUrl(`/uploads/previews/${fileNameWithoutExtension}_v${item.version}.png`);
+    }
+  };
 
   return (
     <Modal
@@ -66,22 +256,21 @@ export function DrawingPreviewModal({ drawing, onClose }: DrawingPreviewModalPro
         </div>
 
         <div className="flex-1 flex overflow-hidden">
-          <div className="flex-1 flex flex-col bg-slate-100 dark:bg-slate-800">
+          <div className={`flex flex-col bg-slate-100 dark:bg-slate-800 ${isFullscreen ? '' : 'max-w-[1300px]'}`}>
             <div className="flex items-center justify-between px-4 py-2 bg-white border-b border-slate-200 dark:bg-slate-800 dark:border-slate-700">
               <div className="flex items-center gap-2">
                 <div className="flex items-center bg-slate-100 rounded-lg p-0.5 dark:bg-slate-700">
                   <button
                     onClick={() => setPreviewMode('svg')}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                      previewMode === 'svg'
-                        ? 'bg-white shadow-sm text-primary-600 dark:bg-slate-600 dark:text-primary-400'
-                        : 'text-slate-600 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
-                    }`}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${previewMode === 'svg'
+                      ? 'bg-white shadow-sm text-primary-600 dark:bg-slate-600 dark:text-primary-400'
+                      : 'text-slate-600 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                      }`}
                   >
                     <FileImage className="w-4 h-4" />
                     图形预览
                   </button>
-                  <button
+                  {/* <button
                     onClick={() => setPreviewMode('pdf')}
                     className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
                       previewMode === 'pdf'
@@ -91,7 +280,7 @@ export function DrawingPreviewModal({ drawing, onClose }: DrawingPreviewModalPro
                   >
                     <FileText className="w-4 h-4" />
                     PDF 预览
-                  </button>
+                  </button> */}
                 </div>
                 <div className="w-px h-6 bg-slate-200 mx-2 dark:bg-slate-600" />
                 <button
@@ -121,24 +310,51 @@ export function DrawingPreviewModal({ drawing, onClose }: DrawingPreviewModalPro
                   <ChevronRight className="w-4 h-4 text-slate-600" />
                 </button>
               </div>
-              <button className="p-2 hover:bg-slate-100 rounded-lg transition-colors dark:text-slate-400 dark:hover:bg-slate-700" title="全屏">
+              <button
+                onClick={() => setIsFullscreen(!isFullscreen)}
+                className="p-2 hover:bg-slate-100 rounded-lg transition-colors dark:text-slate-400 dark:hover:bg-slate-700"
+                title={isFullscreen ? '退出全屏' : '全屏'}
+              >
                 <Maximize2 className="w-4 h-4 text-slate-600" />
               </button>
             </div>
 
-            <div className="flex-1 overflow-auto p-4 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-slate-100 dark:scrollbar-thumb-slate-600 dark:scrollbar-track-slate-800">
+            <div
+              id="preview-container"
+              ref={containerRef}
+              className="overflow-hidden relative p-4 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-slate-100 dark:scrollbar-thumb-slate-600 dark:scrollbar-track-slate-800 h-full w-full"
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={handleMouseUp}
+              onWheel={handleWheel}
+            >
               {previewMode === 'svg' ? (
-                <div className="min-h-full flex items-start justify-center">
-                  <div className="transition-all duration-200" style={{ transform: `scale(${zoom / 100})`, transformOrigin: 'top center' }}>
+                <div className="min-h-full w-full flex items-center justify-center select-none">
+                  {/* 拖拽及缩放的目标容器 */}
+                  <div
+                    ref={contentRef}
+                    className={`transition-transform ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+                    style={{
+                      transform: `translate(${position.x}px, ${position.y}px) scale(${zoom / 100})`,
+                      transformOrigin: 'center center',
+                      // 关键点：isDragging 为 true 时必须完全禁用 transition，否则绝对会抖动！
+                      transition: isDragging ? 'none' : 'transform 0.15s ease-out',
+                      // 关键点：禁用指针事件穿透，防止子元素（如图片/文本）抢占 mousemove 事件
+                      willChange: isDragging ? 'transform' : 'auto'
+                    }}
+                    onMouseDown={handleMouseDown}
+                    onDoubleClick={handleDoubleClick}
+                    title="按住鼠标左键拖拽，双击重置位置"
+                  >
                     {drawing.preview_image ? (
                       <img
-                        src={`http://localhost:3000${drawing.preview_image}`}
+                        src={`http://192.168.110.188:3000${currentPreviewUrl}`}
                         alt={drawing.file_name}
-                        className="border border-slate-300 rounded-lg bg-white shadow-sm"
+                        className="border border-slate-300 rounded-lg bg-white shadow-sm pointer-events-none"
                         style={{ maxWidth: 'none', height: 'auto' }}
                       />
                     ) : (
-                      <svg viewBox="0 0 400 500" fill="none" className="border border-slate-300 rounded-lg bg-white">
+                      <svg viewBox="0 0 400 500" fill="none" className="border border-slate-300 rounded-lg bg-white pointer-events-none">
                         {drawing.structure_type === '立式' ? (
                           <>
                             <rect x="50" y="30" width="300" height="440" rx="15" stroke="#1E293B" strokeWidth="3" fill="white" />
@@ -190,24 +406,21 @@ export function DrawingPreviewModal({ drawing, onClose }: DrawingPreviewModalPro
               ) : (
                 <div className="h-full">
                   <PDFPreview drawing={drawing} />
-                  {/* <embed className='w-full h-full ' src={`http://localhost:3000${drawing.pdf_file_path}`} type="application/pdf">
-                  </embed> */}
                 </div>
               )}
             </div>
           </div>
 
-          <div className="w-100 border-l border-slate-200 flex flex-col dark:border-slate-700">
+          <div className="w-full border-l border-slate-200 flex flex-col dark:border-slate-700">
             <div className="flex border-b border-slate-200 bg-white/50 dark:border-slate-700 dark:bg-slate-800/50 overflow-x-auto scrollbar-hide">
               {tabs.map((tab) => (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`relative flex-shrink-0 px-4 py-3 text-sm font-medium transition-all whitespace-nowrap ${
-                    activeTab === tab.id
-                      ? 'text-primary-600 dark:text-primary-400'
-                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
-                  }`}
+                  className={`relative flex-shrink-0 px-4 py-3 text-sm font-medium transition-all whitespace-nowrap ${activeTab === tab.id
+                    ? 'text-primary-600 dark:text-primary-400'
+                    : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                    }`}
                 >
                   {tab.label}
                   {activeTab === tab.id && (
@@ -338,19 +551,47 @@ export function DrawingPreviewModal({ drawing, onClose }: DrawingPreviewModalPro
 
               {activeTab === 'history' && (
                 <div className="space-y-3">
-                  {versionHistory.map((item, index) => (
-                    <div key={index} className="bg-slate-50 rounded-lg p-4 dark:bg-slate-700">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="font-semibold text-slate-800 dark:text-slate-100">{item.version}</span>
-                        <span className="text-xs text-slate-500 dark:text-slate-400">{item.date}</span>
-                      </div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-xs text-slate-600 dark:text-slate-400">操作人:</span>
-                        <span className="text-xs font-medium text-primary-600 dark:text-primary-400">{item.operator}</span>
-                      </div>
-                      <p className="text-sm text-slate-600 dark:text-slate-300">{item.changes}</p>
+                  {versionHistory.length === 0 ? (
+                    <div className="text-center py-8 text-slate-500">
+                      <FileText className="w-12 h-12 mx-auto mb-2 text-slate-300" />
+                      <p>暂无历史版本记录</p>
                     </div>
-                  ))}
+                  ) : (
+                    versionHistory.map((item, index) => (
+                      <div
+                        key={item.id || index}
+                        className={`bg-slate-50 rounded-lg p-4 dark:bg-slate-700 ${item.version == currentVersion ? 'bg-blue-200 dark:bg-blue-800' : ''}`}
+                      >
+                        <p className="text-sm text-slate-600 dark:text-slate-300 mb-2">{item.log_message}</p>
+                        {item.remark && (
+                          <p className="text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 rounded p-2 mb-2">
+                            备注: {item.remark}
+                          </p>
+                        )}
+                        <div className="flex items-center justify-between ">
+                          <span className="font-semibold text-slate-800 dark:text-slate-100">版本v-{item.version}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-slate-500 dark:text-slate-400">
+                              {item.created_at ? new Date(item.created_at).toLocaleString('zh-CN') : ''}
+                            </span>
+                            <button
+                              onClick={() => handleEditRemark(item)}
+                              className="px-2 py-1 text-xs bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-300 rounded hover:bg-slate-300 dark:hover:bg-slate-500 transition-colors"
+                            >
+                              编辑备注
+                            </button>
+                            {/* 预览按钮 */}
+                            <button
+                              onClick={() => handlePreviewItemClick(item)}
+                              className={`px-2 py-1 text-xs bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-300 rounded hover:bg-slate-300 dark:hover:bg-slate-500 transition-colors`}
+                            >
+                              预览
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               )}
             </div>
@@ -376,6 +617,35 @@ export function DrawingPreviewModal({ drawing, onClose }: DrawingPreviewModalPro
             文件路径: {drawing.file_path}
           </div>
         </div>
+
+        {/* 编辑备注弹窗 */}
+        {showEditModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl p-6 w-full max-w-md">
+              <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-4">编辑备注</h3>
+              <textarea
+                value={editRemark}
+                onChange={(e) => setEditRemark(e.target.value)}
+                className="w-full h-32 p-3 border border-slate-200 dark:border-slate-600 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100"
+                placeholder="请输入备注内容..."
+              />
+              <div className="flex items-center justify-end gap-3 mt-4">
+                <button
+                  onClick={() => setShowEditModal(false)}
+                  className="px-4 py-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleSaveRemark}
+                  className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+                >
+                  保存
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </Modal>
   );

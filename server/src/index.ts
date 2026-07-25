@@ -7,6 +7,7 @@ import authRoutes from './routes/authRoutes';
 import userRoutes from './routes/userRoutes';
 import roleRoutes from './routes/roleRoutes';
 import drawingRoutes from './routes/drawingRoutes';
+import vesselLogsRoutes from './routes/vesselLogsRoutes';
 import { success, fail } from './utils/response';
 // 启动时自动初始化数据库（如果表不存在）
 import './scripts/initDb';
@@ -37,6 +38,7 @@ app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/roles', roleRoutes);
 app.use('/api/v1/drawings', drawingRoutes);
+app.use('/api/v1/logs', vesselLogsRoutes);
 
 // 404
 app.use((req, res) => {
