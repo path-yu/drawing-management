@@ -2,7 +2,8 @@ import fs from 'fs';
 import https from 'https';
 import path from 'path';
 import 'dotenv/config';
-import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
+import PDFParser from 'pdf2json';
+import { pdf } from 'pdf-to-img'; // 引入 pdf-to-img
 
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || '';
 
@@ -14,84 +15,115 @@ if (!fs.existsSync(PREVIEW_DIR)) {
 
 
 
-// 生成PDF预览图（第一页）
-export async function generatePDFPreview(pdfPath: string,version:string): Promise<string> {
-    const data = new Uint8Array(fs.readFileSync(pdfPath));
-    const pdf = await pdfjsLib.getDocument({ data }).promise;
-    
-    // 获取第一页
-    const page = await pdf.getPage(1);
-    
-    // 设置缩放比例，生成合适大小的预览图
-    const viewport = page.getViewport({ scale: 2 });
-    
-    // 创建canvas并渲染（使用@napi-rs/canvas跨平台版本）
-    const { createCanvas } = await import('@napi-rs/canvas');
-    const canvas = createCanvas(viewport.width, viewport.height);
-    const ctx = canvas.getContext('2d');
-    
-    // 渲染页面到canvas
-    await page.render({
-        canvas: canvas,
-        viewport: viewport
-    }).promise;
-    
-    // 生成文件名（使用时间戳和原始文件名）
-    const originalName = path.basename(pdfPath, '.pdf');
-    const previewFileName = `${originalName}.png`;
-    const previewPath = path.join(PREVIEW_DIR, previewFileName);
-    
-    // 保存为PNG
-    const buffer = canvas.toBuffer('image/png');
-    fs.writeFileSync(previewPath, buffer);
-    
-    // 返回相对路径，供前端访问
-    return `/uploads/previews/${previewFileName}`;
+/**
+ * 生成 PDF 预览图（第一页）
+ */
+export async function generatePDFPreview(
+  pdfPath: string,
+  version: string
+): Promise<string> {
+  // 确保目录存在
+  if (!fs.existsSync(PREVIEW_DIR)) {
+    fs.mkdirSync(PREVIEW_DIR, { recursive: true });
+  }
+
+  // 1. 加载 PDF 文件并生成第一页图片 (scale 相当于放大倍率)
+  const document = await pdf(pdfPath, { scale: 2 });
+  const firstPageBuffer = await document.getPage(1);
+
+  // 2. 拼接输出文件名
+  const originalName = path.basename(pdfPath, '.pdf');
+  const previewFileName = `${originalName}.png`
+
+  const previewPath = path.join(PREVIEW_DIR, previewFileName);
+
+  // 3. 写入图片磁盘
+  await fs.promises.writeFile(previewPath, firstPageBuffer);
+
+  console.log(`[预览图生成成功]: ${previewPath}`);
+
+  return `/uploads/previews/${previewFileName}`;
 }
 
-export async function extractTextFromPDF(filePath: string): Promise<string[]> {
-    const data = new Uint8Array(fs.readFileSync(filePath));
-    const pdf = await pdfjsLib.getDocument({ data }).promise;
-    
-    const pagesText: string[] = [];
-    for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const textContent = await page.getTextContent();
-        
-        const rowsMap = new Map<number, { str: string; x: number }[]>();
-        
-        textContent.items.forEach((item) => {
-            if ('str' in item && 'transform' in item) {
-            const y = Math.round(item.transform[5] * 100) / 100;
-            if (!rowsMap.has(y)) {
-                rowsMap.set(y, []);
-            }
-            rowsMap.get(y)!.push({
-                    str: item.str,
-                    x: item.transform[4]
-                });
-            }
-        });
+/**
+ * 使用 pdf2json 按坐标排序提取 PDF 文本（无需 pdfjs-dist / Canvas）
+ * @param filePath PDF 文件绝对路径
+ * @param lineThreshold 同一行 Y 坐标的偏差容差（默认 0.5）
+ */
+export async function extractTextFromPDF(
+  filePath: string,
+  lineThreshold: number = 0.5
+): Promise<string[]> {
+  return new Promise((resolve, reject) => {
+    const pdfParser = new PDFParser();
 
-        const sortedRows: string[] = [];
-        const sortedY = Array.from(rowsMap.keys()).sort((a, b) => b - a);
-        
-        sortedY.forEach(y => {
-            const rowItems = rowsMap.get(y)!;
-            rowItems.sort((a, b) => a.x - b.x);
-            const rowText = rowItems.map(item => item.str).join(' ');
+    pdfParser.on('pdfParser_dataError', (errData: any) => {
+      reject(errData.parserError);
+    });
+
+    pdfParser.on('pdfParser_dataReady', (pdfData: any) => {
+      try {
+        const pagesText: string[] = [];
+
+        // 遍历 PDF 的每一页
+        pdfData.Pages.forEach((page: any, pageIndex: number) => {
+          const rows: { y: number; items: { str: string; x: number }[] }[] = [];
+
+          // 1. 收集并清洗文本块
+          page.Texts.forEach((textItem: any) => {
+            const x = Number(textItem.x.toFixed(1));
+            const y = Number(textItem.y.toFixed(1));
+            const str = decodeURIComponent(
+              textItem.R.map((r: any) => r.T).join('')
+            ).trim();
+
+            if (!str) return;
+
+            // 查找是否存在同一高度的行 (Y轴容差 lineThreshold)
+            let matchingRow = rows.find(r => Math.abs(r.y - y) <= lineThreshold);
+
+            if (!matchingRow) {
+              matchingRow = { y, items: [] };
+              rows.push(matchingRow);
+            }
+
+            matchingRow.items.push({ str, x });
+          });
+
+          // 2. 按 Y 轴从上到下排序 (Y 越小越靠顶部)
+          rows.sort((a, b) => a.y - b.y);
+
+          // 3. 行内按 X 轴从左到右排序，并生成带坐标文本
+          const pageLines: string[] = [];
+          for (const row of rows) {
+            row.items.sort((a, b) => a.x - b.x);
+
+            // 将整行的文本拼接，格式为: [X:x坐标] 文本内容
+            const rowText = row.items
+              .map(item => `[X:${item.x}] ${item.str}`)
+              .join(' ');
+
             if (rowText.trim() !== '') {
-                sortedRows.push(rowText);
+              // 在行首注入 Y 坐标
+              pageLines.push(`[Y:${row.y.toFixed(1)}] ${rowText}`);
             }
+          }
+
+          // 4. 组装当前页纯文本，并 push 到数组中
+          const fullPageString = `=== 第 ${pageIndex + 1} 页 ===\n` + pageLines.join('\n');
+          pagesText.push(fullPageString);
         });
 
-        const pageText = sortedRows.join('\n');
-        pagesText.push(`=== 第 ${i} 页 ===\n${pageText}`);
-    }
-    
-    return pagesText;
-}
+        // 5. 返回字符串数组 Promise<string[]>
+        resolve(pagesText);
+      } catch (err) {
+        reject(err);
+      }
+    });
 
+    pdfParser.loadPDF(filePath);
+  });
+}
 async function callDeepSeekAPI(messages: any[]): Promise<string> {
     const payload = {
         model: 'deepseek-v4-flash',
@@ -164,8 +196,8 @@ export async function analyzePDFWithDeepSeek(pagesText: string[], filePath: stri
   "material": "材料名称，例如Q345R or S30408",
   "design_life": 使用年限数值（number类型）,
   "medium": "介质名称",
-  "nominal_diameter": 公称直径mm（number类型）,
-  "wall_thickness": 壁厚mm（number类型）,
+  "nominal_diameter": 公称直径mm（number类型）从图中提取，例如∅2400，∅2200之类的,
+  "wall_thickness": 壁厚mm（number类型）从图中提取，它在公称直径尺寸线立式（左侧or右侧），卧式（上面or下面）附近查找板厚标注，提取该具体数值,
   "total_height_or_length": 总高或总长mm（number类型）,
   "weight": 重量kg（number类型）,
   "safety_valve_connection": "安全阀接口规格",
@@ -189,7 +221,6 @@ export async function analyzePDFWithDeepSeek(pagesText: string[], filePath: stri
 - outlet_count: 统计用途为 "出气口" 的行数量（通常为1）。
 
 1. medium: 介质名称，储气罐通常为"空气"
-2. wall_thickness: 壁厚，公称直径尺寸线立式（左侧or右侧），卧式（上面or下面）附近查找板厚标注，提取该具体数值
 
 flow_direction的值必须严格判断为 "右进左出" 或 "左进右出"。
 1. 先查看"管口表"，找到用途为"进气口"的管口序号（例如 N6）。

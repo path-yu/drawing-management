@@ -1,140 +1,233 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import * as pdfjsLib from 'pdfjs-dist';
-import { ZoomIn, ZoomOut, RotateCcw, FileText, Download, Printer, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { Document, Page, PDFViewer, Text, View, StyleSheet } from '@react-pdf/renderer';
+import { ZoomIn, ZoomOut, RotateCcw, FileText, Download, Printer } from 'lucide-react';
 import { VesselDrawing } from '../types';
-
-// 设置 pdfjs-dist worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).href;
 
 interface PDFPreviewProps {
   drawing: VesselDrawing;
 }
 
+const styles = StyleSheet.create({
+  page: {
+    padding: 40,
+    fontFamily: 'Helvetica',
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 20,
+    color: '#1E293B',
+  },
+  infoRow: {
+    flexDirection: 'row',
+    marginBottom: 8,
+  },
+  label: {
+    width: 120,
+    fontSize: 12,
+    color: '#64748B',
+  },
+  value: {
+    fontSize: 12,
+    color: '#1E293B',
+    fontWeight: '500',
+  },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginTop: 20,
+    marginBottom: 10,
+    color: '#2563EB',
+    borderBottom: '1px solid #E2E8F0',
+    paddingBottom: 5,
+  },
+  table: {
+    width: '100%',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 4,
+  },
+  tableHeader: {
+    backgroundColor: '#F1F5F9',
+    padding: 8,
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#475569',
+  },
+  tableCell: {
+    padding: 8,
+    fontSize: 11,
+    color: '#334155',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+});
+
 export function PDFPreview({ drawing }: PDFPreviewProps) {
-  const [numPages, setNumPages] = useState<number>(0);
-  const [pageNumber, setPageNumber] = useState<number>(1);
-  const [zoom, setZoom] = useState<number>(1.7);
+  const [numPages] = useState(1);
+  const [pageNumber, setPageNumber] = useState(1);
+  const [zoom, setZoom] = useState(1);
+  const [rotation, setRotation] = useState(0);
 
-  // 💡 关键修改：根据 structure_type 是否为 "立式" 动态初始化旋转角度
-  // 如果 "立式" 转 90 度后方向依然倒置，可以把这里的 90 改为 270
-  const [rotation, setRotation] = useState<number>(() => {
-    return drawing.structure_type === '立式' ? 270 : 0;
-  });
+  const handleDownload = () => {
+    const content = `
+${drawing.file_name}
+============================================
+物料编码: ${drawing.material_code}
+版本: ${drawing.version}
+结构形式: ${drawing.structure_type}
+材质: ${drawing.material}
+介质: ${drawing.medium}
+============================================
+技术参数:
+工作压力: ${drawing.working_pressure.toFixed(2)} MPa
+设计压力: ${drawing.design_pressure.toFixed(2)} MPa
+设计温度: ${drawing.design_temperature} C
+容积: ${drawing.volume.toFixed(2)} m3
+公称直径: ${drawing.nominal_diameter} mm
+壁厚: ${drawing.wall_thickness.toFixed(1)} mm
+总高/总长: ${drawing.total_height_or_length} mm
+重量: ${drawing.weight.toLocaleString()} kg
+设计使用年限: ${drawing.design_life} 年
+============================================
+接口规格:
+安全阀接口: ${drawing.safety_valve_connection}
+排污口连接: ${drawing.drain_connection}
+进口连接: ${drawing.inlet_connection}
+出口连接: ${drawing.outlet_connection}
+============================================
+创建人: ${drawing.created_by}
+创建时间: ${drawing.created_at}
+修改人: ${drawing.updated_by}
+修改时间: ${drawing.updated_at}
+${drawing.remark ? `\n备注: ${drawing.remark}` : ''}
+    `.trim();
 
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const pdfDocRef = useRef<pdfjsLib.PDFDocumentProxy | null>(null);
-  const isRenderingRef = useRef(false);
-
-  // 当外部传入的 drawing 发生切换时，同步更新初始旋转角度
-  useEffect(() => {
-    setRotation(drawing.structure_type === '立式' ? 270 : 0);
-  }, [drawing.structure_type]);
-
-  // 加载 PDF 文档
-  useEffect(() => {
-    if (!drawing.pdf_file_path) {
-      setError('无法加载PDF文件');
-      setLoading(false);
-      return;
-    }
-
-    const loadDocument = async () => {
-      try {
-        const response = await fetch(`http://localhost:3000${drawing.pdf_file_path}`);
-        if (!response.ok) {
-          throw new Error('无法获取PDF文件');
-        }
-        const arrayBuffer = await response.arrayBuffer();
-        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-        pdfDocRef.current = pdf;
-        setNumPages(pdf.numPages);
-        setError(null);
-      } catch (err) {
-        console.error('PDF加载错误:', err);
-        setError('PDF加载失败');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadDocument();
-
-    return () => {
-      pdfDocRef.current = null;
-    };
-  }, [drawing.pdf_file_path]);
-
-  // 渲染指定页面
-  const renderPage = useCallback(async () => {
-    if (isRenderingRef.current) return;
-    isRenderingRef.current = true;
-
-    if (!canvasRef.current || !pdfDocRef.current) {
-      isRenderingRef.current = false;
-      return;
-    }
-
-    try {
-      const pageNum = Math.min(Math.max(pageNumber, 1), pdfDocRef.current.numPages);
-      const page = await pdfDocRef.current.getPage(pageNum);
-
-      // 标准 PDF.js 渲染逻辑
-      const viewport = page.getViewport({ 
-        scale: zoom, 
-        rotation: rotation 
-      });
-
-      const canvas = canvasRef.current;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        throw new Error('无法获取Canvas上下文');
-      }
-
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-
-      const renderTask = page.render({
-        canvasContext: ctx,
-        viewport: viewport,
-        canvas: canvasRef.current  
-      });
-
-      await renderTask.promise;
-
-    } catch (err) {
-      console.error('PDF渲染错误:', err);
-    } finally {
-      isRenderingRef.current = false;
-    }
-  }, [pageNumber, zoom, rotation]);
-
-  useEffect(() => {
-    if (pdfDocRef.current && !loading) {
-      renderPage();
-    }
-  }, [renderPage, loading]);
-
-  const handleDownload = async () => {
-    if (!drawing.pdf_file_path) return;
-    try {
-      const response = await fetch(`http://localhost:3000${drawing.pdf_file_path}`);
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = drawing.file_name.replace('.dwg', '.pdf');
-      link.click();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error('下载失败:', err);
-    }
+    const blob = new Blob([content], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${drawing.material_code}_${drawing.file_name}.pdf`;
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   const handlePrint = () => {
     window.print();
   };
+
+  const pdfContent = useMemo(() => (
+    <Document>
+      <Page size="A4" style={styles.page}>
+        <Text style={styles.title}>{drawing.file_name}</Text>
+        
+        <View style={styles.infoRow}>
+          <Text style={styles.label}>物料编码:</Text>
+          <Text style={styles.value}>{drawing.material_code}</Text>
+        </View>
+        <View style={styles.infoRow}>
+          <Text style={styles.label}>版本:</Text>
+          <Text style={styles.value}>{drawing.version}</Text>
+        </View>
+        <View style={styles.infoRow}>
+          <Text style={styles.label}>结构形式:</Text>
+          <Text style={styles.value}>{drawing.structure_type}</Text>
+        </View>
+        <View style={styles.infoRow}>
+          <Text style={styles.label}>材质:</Text>
+          <Text style={styles.value}>{drawing.material}</Text>
+        </View>
+        <View style={styles.infoRow}>
+          <Text style={styles.label}>介质:</Text>
+          <Text style={styles.value}>{drawing.medium}</Text>
+        </View>
+
+        <Text style={styles.sectionTitle}>技术参数</Text>
+        
+        <View style={styles.infoRow}>
+          <Text style={styles.label}>工作压力:</Text>
+          <Text style={styles.value}>{drawing.working_pressure.toFixed(2)} MPa</Text>
+        </View>
+        <View style={styles.infoRow}>
+          <Text style={styles.label}>设计压力:</Text>
+          <Text style={styles.value}>{drawing.design_pressure.toFixed(2)} MPa</Text>
+        </View>
+        <View style={styles.infoRow}>
+          <Text style={styles.label}>设计温度:</Text>
+          <Text style={styles.value}>{drawing.design_temperature} C</Text>
+        </View>
+        <View style={styles.infoRow}>
+          <Text style={styles.label}>容积:</Text>
+          <Text style={styles.value}>{drawing.volume.toFixed(2)} m3</Text>
+        </View>
+        <View style={styles.infoRow}>
+          <Text style={styles.label}>公称直径:</Text>
+          <Text style={styles.value}>{drawing.nominal_diameter} mm</Text>
+        </View>
+        <View style={styles.infoRow}>
+          <Text style={styles.label}>壁厚:</Text>
+          <Text style={styles.value}>{drawing.wall_thickness.toFixed(1)} mm</Text>
+        </View>
+        <View style={styles.infoRow}>
+          <Text style={styles.label}>总高/总长:</Text>
+          <Text style={styles.value}>{drawing.total_height_or_length} mm</Text>
+        </View>
+        <View style={styles.infoRow}>
+          <Text style={styles.label}>重量:</Text>
+          <Text style={styles.value}>{drawing.weight.toLocaleString()} kg</Text>
+        </View>
+        <View style={styles.infoRow}>
+          <Text style={styles.label}>设计使用年限:</Text>
+          <Text style={styles.value}>{drawing.design_life} 年</Text>
+        </View>
+
+        <Text style={styles.sectionTitle}>接口规格</Text>
+        
+        <View style={styles.infoRow}>
+          <Text style={styles.label}>安全阀接口:</Text>
+          <Text style={styles.value}>{drawing.safety_valve_connection}</Text>
+        </View>
+        <View style={styles.infoRow}>
+          <Text style={styles.label}>排污口连接:</Text>
+          <Text style={styles.value}>{drawing.drain_connection}</Text>
+        </View>
+        <View style={styles.infoRow}>
+          <Text style={styles.label}>进口连接:</Text>
+          <Text style={styles.value}>{drawing.inlet_connection}</Text>
+        </View>
+        <View style={styles.infoRow}>
+          <Text style={styles.label}>出口连接:</Text>
+          <Text style={styles.value}>{drawing.outlet_connection}</Text>
+        </View>
+
+        <Text style={styles.sectionTitle}>文件信息</Text>
+        
+        <View style={styles.infoRow}>
+          <Text style={styles.label}>创建人:</Text>
+          <Text style={styles.value}>{drawing.created_by}</Text>
+        </View>
+        <View style={styles.infoRow}>
+          <Text style={styles.label}>创建时间:</Text>
+          <Text style={styles.value}>{drawing.created_at}</Text>
+        </View>
+        <View style={styles.infoRow}>
+          <Text style={styles.label}>修改人:</Text>
+          <Text style={styles.value}>{drawing.updated_by}</Text>
+        </View>
+        <View style={styles.infoRow}>
+          <Text style={styles.label}>修改时间:</Text>
+          <Text style={styles.value}>{drawing.updated_at}</Text>
+        </View>
+
+        {drawing.remark && (
+          <>
+            <Text style={styles.sectionTitle}>备注</Text>
+            <Text style={styles.value}>{drawing.remark}</Text>
+          </>
+        )}
+      </Page>
+    </Document>
+  ), [drawing]);
 
   return (
     <div className="flex flex-col h-full">
@@ -184,38 +277,27 @@ export function PDFPreview({ drawing }: PDFPreviewProps) {
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto p-4 bg-slate-100 relative pdf-scrollbar">
-        <div className="flex items-center justify-center min-h-full" style={{ opacity: loading || error ? 0 : 1 }}>
-          <canvas
-            ref={canvasRef}
-            className="bg-white shadow-lg max-w-full"
-          />
+      <div className="flex-1 overflow-auto p-4 bg-slate-100">
+        <div 
+          className="mx-auto bg-white shadow-lg"
+          style={{ 
+            transform: `scale(${zoom}) rotate(${rotation}deg)`,
+            transformOrigin: 'center center',
+            maxWidth: '100%',
+          }}
+        >
+          <PDFViewer style={{ width: '100%', height: '100%', minHeight: '600px' }}>
+            {pdfContent}
+          </PDFViewer>
         </div>
-        
-        {loading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-slate-100/90">
-            <div className="animate-spin rounded-full h-10 w-10 border-4 border-primary-600 border-t-transparent" />
-          </div>
-        )}
-        
-        {error && !loading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-slate-100/90">
-            <div className="text-center text-slate-500">
-              <FileText className="w-12 h-12 mx-auto mb-2 text-slate-300" />
-              <p>{error}</p>
-              <p className="text-sm mt-1">请检查PDF文件是否存在</p>
-            </div>
-          </div>
-        )}
       </div>
 
       <div className="flex items-center justify-center gap-4 px-4 py-2 bg-white border-t border-slate-200">
         <button
           onClick={() => setPageNumber(Math.max(1, pageNumber - 1))}
-          disabled={pageNumber <= 1 || loading}
-          className="flex items-center gap-1 px-3 py-1 text-sm text-slate-600 hover:bg-slate-100 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          disabled={pageNumber <= 1}
+          className="px-3 py-1 text-sm text-slate-600 hover:bg-slate-100 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <ChevronLeft className="w-4 h-4" />
           上一页
         </button>
         <span className="text-sm text-slate-500">
@@ -223,11 +305,10 @@ export function PDFPreview({ drawing }: PDFPreviewProps) {
         </span>
         <button
           onClick={() => setPageNumber(Math.min(numPages, pageNumber + 1))}
-          disabled={pageNumber >= numPages || loading}
-          className="flex items-center gap-1 px-3 py-1 text-sm text-slate-600 hover:bg-slate-100 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          disabled={pageNumber >= numPages}
+          className="px-3 py-1 text-sm text-slate-600 hover:bg-slate-100 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           下一页
-          <ChevronRight className="w-4 h-4" />
         </button>
       </div>
     </div>

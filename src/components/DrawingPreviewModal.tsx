@@ -4,6 +4,7 @@ import { VesselDrawing } from '../types';
 import { Modal } from './Modal';
 import { PDFPreview } from './PDFPreview';
 import { api } from '../utils/api';
+import { downloadFile } from '@/utils/download';
 
 interface DrawingPreviewModalProps {
   drawing: VesselDrawing | null;
@@ -215,19 +216,37 @@ export function DrawingPreviewModal({ drawing, onClose }: DrawingPreviewModalPro
   // 
   const handlePreviewItemClick = (item: any) => {
     setCurrentVersion(item.version);
-    // 获取当前图纸的文件名
     if (item.version == '1') {
-      // "/uploads/previews/CQG10-0.88（DN125JC,20年）_v2.png", 去掉_v${item.version}.png
-      // 匹配 _v 后跟一个或多个数字
-      const result = drawing.preview_image.replace(/_v\d+/g, "");
-      setCurrentPreviewUrl(result);
-    }else{
-     // 读取文件名，去掉dwg后缀名
-     const fileNameWithoutExtension = drawing.file_name.replace('.dwg', '');
-     setCurrentPreviewUrl(`/uploads/previews/${fileNameWithoutExtension}_v${item.version}.png`);
+      const fileNameWithoutExtension = drawing.dwg_file_path.split('/').pop()!.replace('.dwg', '');
+      setCurrentPreviewUrl(`/uploads/previews/${fileNameWithoutExtension}.png`);
+    } else {
+      // 读取文件名，去掉dwg后缀名
+      const fileNameWithoutExtension = drawing.dwg_file_path.split('/').pop()!.replace('.dwg', '');
+      setCurrentPreviewUrl(`/uploads/previews/${fileNameWithoutExtension}_v${item.version}.png`);
     }
-  };
 
+  };
+  //下载当前版本的PDF文件
+// 通用文件下载处理函数
+const handleDownload = (type: 'pdf' | 'dwg'|'preview' ) => {
+  // 1. 兼容斜杠 '/' 和反斜杠 '\' 提取文件名，并去除 .dwg 或 .pdf 后缀
+  const rawFileName = drawing.dwg_file_path.split(/[/\\]/).pop() || '';
+  const fileNameWithoutExtension = rawFileName.replace(/\.(dwg|pdf)$/i, '');
+
+  // 2. 判断版本：版本为 '1' 时不拼接后缀，非 '1' 时拼接 _v{version}
+  const versionSuffix = currentVersion === '1' ? '' : `_v${currentVersion}`;
+  const extension = type === 'dwg' ? 'dwg' : type === 'preview' ? 'png' : type === 'pdf' ? 'pdf' : 'pdf';
+  
+  // 3. 构造完整的文件名 (例: CQG20-0.88.pdf 或 CQG20-0.88_v2.dwg 或 CQG20-0.88_v2.png)
+  const filename = `${fileNameWithoutExtension}${versionSuffix}.${extension}`;
+
+  // 4. 根据类型动态拼接后端下载服务 URL (PDF 走 /uploads/pdf/，DWG 走 /uploads/dwg/)
+  const subFolder = type === 'pdf' ? 'pdf' : type === 'dwg' ? 'dwg' : 'previews';
+  const downloadUrl = `http://192.168.110.188:3000/uploads/${subFolder}/${filename}?download=1`;
+
+  // 5. 执行下载
+  downloadFile(downloadUrl, { filename });
+};
   return (
     <Modal
       open={!!drawing}
@@ -243,7 +262,7 @@ export function DrawingPreviewModal({ drawing, onClose }: DrawingPreviewModalPro
           <div className="flex items-center gap-3">
             <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">{drawing.file_name}</h2>
             <span className="badge badge-primary">{drawing.material_code}</span>
-            <span className="badge badge-gray">{drawing.version}</span>
+            <span className="badge badge-gray">当前版本：V_{drawing.version}</span>
           </div>
           <button
             onClick={onClose}
@@ -560,7 +579,7 @@ export function DrawingPreviewModal({ drawing, onClose }: DrawingPreviewModalPro
                     versionHistory.map((item, index) => (
                       <div
                         key={item.id || index}
-                        className={`bg-slate-50 rounded-lg p-4 dark:bg-slate-700 ${item.version == currentVersion ? 'bg-blue-200 dark:bg-blue-800' : ''}`}
+                        className={`bg-slate-50 rounded-lg p-4 dark:bg-slate-700 ${item.version == currentVersion ? 'bg-blue-300 dark:bg-blue-800' : ''}`}
                       >
                         <p className="text-sm text-slate-600 dark:text-slate-300 mb-2">{item.log_message}</p>
                         {item.remark && (
@@ -600,13 +619,17 @@ export function DrawingPreviewModal({ drawing, onClose }: DrawingPreviewModalPro
 
         <div className="flex items-center justify-between px-5 py-3 bg-slate-50 border-t border-slate-200 dark:bg-slate-800 dark:border-slate-700">
           <div className="flex items-center gap-3">
-            <button className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors text-sm font-medium">
-              <FileText className="w-4 h-4" />
-              一键生成客户报价 PDF（带水印）
+            <button onClick={()=>handleDownload('pdf')} className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors text-sm font-medium">
+              <Download className="w-4 h-4" />
+              下载pdf
             </button>
-            <button className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors text-sm font-medium dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600">
+            <button onClick={()=>handleDownload('dwg')} className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors text-sm font-medium dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600">
               <Download className="w-4 h-4" />
               下载 DWG 原图
+            </button>
+             <button onClick={()=>handleDownload('preview')} className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors text-sm font-medium dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600">
+              <Download className="w-4 h-4" />
+              下载预览图片
             </button>
             <button className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors text-sm font-medium dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600">
               <Copy className="w-4 h-4" />

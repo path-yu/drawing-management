@@ -1049,9 +1049,8 @@
       (setq file_name dwg_fullname)
     )
   )
-
   ;; 设置固定导出目录：D:\GitCode\drawing-management\PDF
-  (setq output_dir "D:\\GitCode\\drawing-management\\server\\uploads\\PDF")
+  (setq output_dir "\\\\Desktop-llroqqp\\pdf")
   (if (not (vl-file-directory-p output_dir)) 
     (vl-mkdir output_dir)
   )
@@ -1165,6 +1164,7 @@
                                               ".pdf"
                                       )
               )
+              
               (if (findfile default_generated) 
                 (progn 
                   (if (findfile target_pdf_path) (vl-file-delete target_pdf_path))
@@ -1176,7 +1176,9 @@
               (princ "\n==================================================")
               (princ (strcat "\n[导出完成！] 单页 A4 PDF 已保存至: " target_pdf_path))
               (princ "\n==================================================\n")
-
+              ;; 上传 dwg 文件至 BESA 服务器
+              (c:BESA_UPLOAD_BIN (strcat dwg_path dwg_fullname))
+             
               ;; 修改后：传入单张图纸的实体 (list (nth 1 box))
               (send_api_analyze 
                 (strcat dwg_path file_name)
@@ -1583,7 +1585,7 @@
               (setq dwg_name (vl-filename-base dwg_fullname))
               (setq file_name dwg_fullname)
 
-              (setq output_dir "D:\\GitCode\\drawing-management\\server\\uploads\\PDF")
+              (setq output_dir "\\\\Desktop-llroqqp\\pdf")
               (if (not (vl-file-directory-p output_dir)) (vl-mkdir output_dir))
 
               ;; 导出的 PDF 文件名格式: 文件名_v纯数字版本
@@ -1598,7 +1600,13 @@
               )
 
               (export_single_pdf ent minpt maxpt "A4" pdf_name)
-
+              ;; 6. 调用 c:BESA_UPLOAD_BIN 进行文件上传
+              ;; =========================================================
+              ;; (A) 上传 DWG 图纸文件
+              (princ "\n[正在上传 DWG 图纸文件...]")
+              (c:BESA_UPLOAD_BIN (strcat dwg_path pdf_name))
+        
+              
               ;; 若导出到了桌面，移动到 uploads 目标目录
               (setq default_generated (strcat (getenv "USERPROFILE") "\\Desktop\\" pdf_name ".pdf"))
               (if (findfile default_generated)
@@ -1688,3 +1696,185 @@
     (princ "\n[API 请求失败] 无法创建 HTTP 请求组件。")
   )
 )
+
+;; ============================================================================
+;; 函数名称: UploadSingleFile
+;; 功能说明: 增强版文件上传（兼容 UNC 网络路径及 CAD 文件占用）
+;; ============================================================================
+(defun UploadSingleFile (filePath uploadUrl / adoStream httpObj fileBytes responseText fileName localTempPath)
+  (vl-load-com)
+  (setq filePath (vl-string-translate "/" "\\" filePath))
+  
+  (if (findfile filePath)
+    (progn
+      (setq fileName (strcat (vl-filename-base filePath) (vl-filename-extension filePath)))
+      ;; 构建本地临时文件路径，避免网络共享文件锁冲突
+      (setq localTempPath (strcat (getenv "TEMP") "\\upload_temp_" fileName))
+
+      ;; 1. 将网络/本地文件复制到系统临时文件夹
+      (if (findfile localTempPath) (vl-file-delete localTempPath))
+      (vl-file-copy filePath localTempPath)
+
+      ;; 如果复制成功，使用临时文件读取上传
+      (if (findfile localTempPath)
+        (progn
+          ;; 2. 读取二进制流
+          (setq adoStream (vlax-create-object "ADODB.Stream"))
+          (vlax-put-property adoStream 'Type 1) ; 1 = adTypeBinary
+          (vlax-invoke-method adoStream 'Open)
+          
+          ;; 从本地 TEMP 路径加载文件
+          (if (not (vl-catch-all-error-p 
+                     (vl-catch-all-apply 'vlax-invoke-method (list adoStream 'LoadFromFile localTempPath))))
+            (progn
+              (setq fileBytes (vlax-invoke-method adoStream 'Read -1))
+              (vlax-invoke-method adoStream 'Close)
+              (vlax-release-object adoStream)
+
+              ;; 3. 创建 HTTP 组件发送请求
+              (setq httpObj (vl-catch-all-apply 'vlax-create-object '("MSXML2.ServerXMLHTTP.6.0")))
+              (if (vl-catch-all-error-p httpObj)
+                (setq httpObj (vlax-create-object "WinHttp.WinHttpRequest.5.1"))
+              )
+
+              (if httpObj
+                (progn
+                  (vl-catch-all-apply
+                    '(lambda ()
+                       (vlax-invoke-method httpObj 'open "POST" uploadUrl :vlax-false)
+                       (vlax-invoke-method httpObj 'setRequestHeader "Content-Type" "application/octet-stream")
+                       (vlax-invoke-method httpObj 'setRequestHeader "X-File-Name" fileName)
+                       
+                       (princ (strcat "\n[上传中...] 正在发送: " fileName " ..."))
+                       (vlax-invoke-method httpObj 'send fileBytes)
+                       
+                       (setq responseText (vlax-get-property httpObj 'responseText))
+                       (princ (strcat "\n[上传完成] 返回: " responseText))
+                     )
+                  )
+                  (vlax-release-object httpObj)
+                )
+                (princ "\n[错误] 无法创建 HTTP 请求组件。")
+              )
+            )
+            (progn
+              (vlax-release-object adoStream)
+              (princ (strcat "\n[错误] 读取文件二进制流失败: " localTempPath))
+            )
+          )
+
+          ;; 4. 清理本地临时文件
+          (if (findfile localTempPath) (vl-file-delete localTempPath))
+          responseText
+        )
+        (princ (strcat "\n[错误] 无法将文件复制至临时目录: " localTempPath))
+      )
+    )
+    (progn
+      (princ (strcat "\n[提示] 未找到指定上传文件: " filePath))
+      nil
+    )
+  )
+)
+
+;; ============================================================================
+;; 命令/函数: BESA_UPLOAD_BIN
+;; 参数说明: customDwgName (选填，字符串类型)
+;;           - 若传入 customDwgName，则上传该指定文件/文件名
+;;           - 若未传入 (即 nil)，自动获取当前打开图纸的文件名上传
+;; ============================================================================
+
+;; ============================================================================
+;; 命令/函数: BESA_UPLOAD_BIN
+;; 参数说明: customDwgName (选填，字符串类型)
+;;           - 若传入 customDwgName：静默保存当前图纸，复制一份并重命名到目标目录后上传
+;;           - 若未传入 (即 nil)：直接上传当前打开的本地图纸文件
+;; ============================================================================
+(defun c:BESA_UPLOAD_BIN (customDwgName / dwgPath dwgName currentDwg uploadUrl targetDwg cleanName doc outputDir)
+  (vl-load-com)
+  (setvar "CMDECHO" 0)
+  
+  ;; 设置后端二进制上传接口地址
+  (setq uploadUrl "http://192.168.110.188:3000/api/v1/upload-raw")
+  
+  ;; 获取当前图纸所在的目录路径与文件名
+  (setq dwgPath (getvar "DWGPREFIX"))
+  (setq dwgName (getvar "DWGNAME"))
+  (setq currentDwg (strcat dwgPath dwgName))
+  
+  ;; 默认目标导出目录（如网络共享文件夹，可按需修改）
+  (setq outputDir "\\\\Desktop-llroqqp\\pdf")
+  (if (not (vl-file-directory-p outputDir)) (vl-mkdir outputDir))
+
+  ;; ==========================================================================
+  ;; 逻辑判断：是否传入了自定义 customDwgName
+  ;; ==========================================================================
+  (if (and customDwgName (= (type customDwgName) 'STR) (/= customDwgName ""))
+    (progn
+      ;; 1. 统一将正斜杠换成反斜杠
+      (setq cleanName (vl-string-translate "/" "\\" customDwgName))
+      
+      ;; 2. 补全 .dwg 后缀 (如果传入的名字不带 .dwg)
+      (if (not (wcmatch (strcase cleanName) "*.DWG"))
+        (setq cleanName (strcat cleanName ".dwg"))
+      )
+
+      ;; 3. 判断传入的是“完整绝对路径”还是“单纯文件名”
+      (if (or (vl-string-search ":" cleanName)
+              (wcmatch cleanName "\\\\*"))
+        (setq targetDwg cleanName) ; 完整路径直接用
+        (progn
+          ;; 移除开头的斜杠，拼接到目标输出目录 outputDir
+          (if (= (substr cleanName 1 1) "\\")
+            (setq cleanName (substr cleanName 2))
+          )
+          (setq targetDwg (strcat outputDir "\\" cleanName))
+        )
+      )
+
+      ;; 4. 【安全静默保存】避免 Automation 错误 Not applicable
+      (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)))
+      (setq isReadOnly (= (vla-get-ReadOnly doc) :vlax-true))
+      (setq isTitled (= (getvar "DWGTITLED") 1)) ; 1表示图纸已被命名保存过
+
+      (if (and (not isReadOnly) isTitled)
+        ;; 如果非只读且已命名，尝试静默保存
+        (vl-catch-all-apply 'vla-Save (list doc))
+        ;; 如果是只读或未命名图纸，跳过 vla-Save，打印提示
+        (princ "\n[提示] 当前图纸未保存或为只读状态，直接使用磁盘现有文件进行复制...")
+      )
+
+      ;; 5. 静默复制副本到目标路径 (覆盖旧副本)
+      (if (findfile targetDwg) (vl-file-delete targetDwg))
+      (if (vl-file-copy currentDwg targetDwg)
+        (progn
+          (princ (strcat "\n[静默复制成功] 已生成 DWG 副本: " targetDwg))
+          (setq currentDwg targetDwg) ; 修正待上传的文件路径为副本路径
+        )
+        (princ (strcat "\n[警告] 文件复制失败，将尝试直接上传原文件: " currentDwg))
+      )
+    )
+    ;; 未传入 customDwgName 时：不做复制操作，直接准备上传当前 DWG
+    (princ (strcat "\n未检测到自定义名称，直接使用当前图纸上传: " currentDwg))
+  )
+
+  ;; ==========================================================================
+  ;; 执行上传
+  ;; ==========================================================================
+  (if (findfile currentDwg)
+    (progn
+      (princ (strcat "\n[正在上传] " currentDwg))
+      ;; 调用底层二进制上传函数
+      (UploadSingleFile currentDwg uploadUrl)
+    )
+    (alert (strcat "上传失败！未找到待上传的文件:\n" 
+                   currentDwg 
+                   "\n\n若是当前新建图纸，请先保存后再试。"))
+  )
+  
+  (setvar "CMDECHO" 1)
+  (princ)
+)
+
+(princ "\n--- 自动上传当前DWG命令 [ BESA_UPLOAD_BIN ] 加载成功 ---")
+(princ)

@@ -78,7 +78,7 @@ export function DrawingCard({ drawing, onPreview, onExport, onEdit, onDelete, se
           <h3 className="font-semibold text-slate-800 text-sm truncate max-w-[200px] dark:text-slate-100" title={drawing.file_name}>
             {drawing.file_name}
           </h3>
-          <span className="badge badge-gray">{drawing.version}</span>
+          <span className="badge badge-gray">当前版本：V_{drawing.version}</span>
         </div>
 
         <div className="flex flex-wrap gap-2 mb-4">

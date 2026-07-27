@@ -7,7 +7,7 @@ import { success, fail } from '../utils/response';
 import { authMiddleware, requirePermission } from '../middleware/auth';
 import { extractTextFromPDF, analyzePDFWithDeepSeek, generatePDFPreview } from '../services/drawingService';
 
-const router = Router();
+const router: Router = Router();
 const now = () => new Date().toISOString();
 
 /**
@@ -223,7 +223,7 @@ router.post('/analyze', async (req: AuthRequest, res) => {
     const parsedData = await analyzePDFWithDeepSeek(textContent, pdfPath);
 
     // 3. 保存原始PDF文件到服务器（检查是否已在服务器目录中，避免重复复制）
-    const pdfDir = path.join(__dirname, '../../uploads/PDF');
+    const pdfDir = path.join(__dirname, '../../uploads/pdf');
     if (!fs.existsSync(pdfDir)) {
       fs.mkdirSync(pdfDir, { recursive: true });
     }
@@ -235,13 +235,13 @@ router.post('/analyze', async (req: AuthRequest, res) => {
 
     if (fs.existsSync(existingPath)) {
       // 文件已存在，直接使用，不再重复复制
-      pdfFilePath = `/uploads/PDF/${originalFileName}`;
+      pdfFilePath = `/uploads/pdf/${originalFileName}`;
     } else {
       // 文件不在服务器目录，需要复制并重命名
       const pdfFileName = `${parsedData.material_code}_${Date.now()}_${originalFileName}`;
       const destPdfPath = path.join(pdfDir, pdfFileName);
       fs.copyFileSync(pdfPath, destPdfPath);
-      pdfFilePath = `/uploads/PDF/${pdfFileName}`;
+      pdfFilePath = `/uploads/pdf/${pdfFileName}`;
     }
 
     // 4. 生成PDF预览图
@@ -281,6 +281,7 @@ router.post('/analyze', async (req: AuthRequest, res) => {
       created_at: now(),
       updated_at: now(),
       flow_direction: parsedData.flow_direction || '右进左出',
+      dwg_download_url:'http://192.168.110.188:3000/uploads/dwg/'+originalFileName,
     });
     //写入日志表记录
     db.vessel_logs.insert({
@@ -310,6 +311,8 @@ router.post('/update', async (req: AuthRequest, res) => {
     const textContent = await extractTextFromPDF(pdfPath);
     //调用DeepSeek API解析
     const parsedData = await analyzePDFWithDeepSeek(textContent, pdfPath);
+    console.log(parsedData,'参数列表');
+    
     // 更新数据库
     db.vessel_drawings.update((d) => d.id === id, { version, updated_at: now(), remark: parsedData.remark || null });
     //生成PDF预览图

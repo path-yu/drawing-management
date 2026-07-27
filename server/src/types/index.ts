@@ -58,3 +58,17 @@ export interface VesselDrawing {
   created_at: string;
   updated_at: string;
 }
+export interface DrawingAnalyzeDTO {
+  id?: string;
+  version?: string;
+  remark?: string;
+  dwg_file_path?: string;
+  file_name?: string;
+  pdfPath?: string;
+}
+
+export interface ApiResponse<T = any> {
+  code: number;
+  message: string;
+  data: T | null;
+}

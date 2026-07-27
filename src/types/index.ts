@@ -5,6 +5,7 @@ export interface VesselDrawing {
   file_path: string;
   file_name: string;
   pdf_file_path: string;
+  dwg_file_path:string;
   preview_image: string;
   created_by: string;
   updated_by: string;
