@@ -29,7 +29,7 @@ export interface ApiResponse<T = any> {
 
 // 图纸数据
 export interface VesselDrawing {
-  id: number;
+  id: string;
   material_code: string;
   version: string;
   file_path: string;

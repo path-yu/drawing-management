@@ -1,5 +1,5 @@
 export interface VesselDrawing {
-  id: number;
+  id: string;
   material_code: string;
   version: string;
   file_path: string;

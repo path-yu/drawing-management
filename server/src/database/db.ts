@@ -16,6 +16,7 @@ interface DbSchema {
   vessel_drawings: any[];
   counters: Record<string, number>;
   vessel_logs: any[];
+  shares: any[];
 }
 
 const dbDir = path.dirname(config.dbPath);
@@ -34,13 +35,17 @@ const emptyDb: DbSchema = {
   vessel_drawings: [],
   counters: {},
   vessel_logs: [],
+  shares: [],
 };
 
 // 加载或创建数据库文件
 function loadDb(): DbSchema {
   if (fs.existsSync(dbFile)) {
     const raw = fs.readFileSync(dbFile, 'utf-8');
-    return JSON.parse(raw);
+    const loaded = JSON.parse(raw);
+    // 兼容旧数据库文件，补充缺失的表
+    if (!loaded.shares) loaded.shares = [];
+    return loaded;
   }
   fs.writeFileSync(dbFile, JSON.stringify(emptyDb, null, 2), 'utf-8');
   return { ...emptyDb };
@@ -121,6 +126,7 @@ export const db = {
   users: new Table<any>('users'),
   vessel_drawings: new Table<any>('vessel_drawings'),
   vessel_logs: new Table<any>('vessel_logs'),
+  shares: new Table<any>('shares'),
 
   // 获取原始数据（用于复杂查询）
   raw: () => data,

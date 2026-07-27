@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import { LayoutGrid, List, SplitSquareVertical, X, Trash2, CheckSquare, Square, AlertTriangle, RefreshCw, Search, Maximize2 } from 'lucide-react';
 import { Header } from '../components/Header';
 import { FilterSidebar } from '../components/FilterSidebar';
@@ -42,6 +43,7 @@ const initialFilter: FilterState = {
 };
 
 export function DashboardPage() {
+  const { id: shareId } = useParams<{ id: string }>();
   const [drawings, setDrawings] = useState<VesselDrawing[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterState>(initialFilter);
@@ -50,7 +52,7 @@ export function DashboardPage() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [previewDrawing, setPreviewDrawing] = useState<VesselDrawing | null>(null);
   const [appliedFilters, setAppliedFilters] = useState<string[]>([]);
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<'single' | 'batch'>('single');
   const [deleteDrawing, setDeleteDrawing] = useState<VesselDrawing | null>(null);
@@ -87,7 +89,19 @@ export function DashboardPage() {
     if (viewMode === 'split' && filteredDrawings.length > 0 && !splitSelectedDrawing) {
       setSplitSelectedDrawing(filteredDrawings[0]);
     }
-  }, [viewMode, filteredDrawings, splitSelectedDrawing]);
+  }, [viewMode, filteredDrawings]);
+
+  // 内部分享链接：识别 URL 中的 id，自动拉取并选中该图纸，开启预览 Modal
+  useEffect(() => {
+    
+    if (!shareId || loading || filteredDrawings.length === 0) return;
+    const target = filteredDrawings.find((d) => d.id === shareId);
+    console.log(filteredDrawings);
+    
+    if (target) {
+      setPreviewDrawing(target);
+    }
+  }, [shareId, loading, filteredDrawings]);
 
   const handleResetFilter = () => {
     setFilter(initialFilter);

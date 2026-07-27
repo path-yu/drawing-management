@@ -1,10 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
-import { ZoomIn, ZoomOut, Maximize2, Download, Copy, FileText, Layers, Ruler, ChevronLeft, ChevronRight, FileImage } from 'lucide-react';
+import { ZoomIn, ZoomOut, Maximize2, Download, Copy, FileText, Layers, Ruler, ChevronLeft, ChevronRight, FileImage,Globe } from 'lucide-react';
 import { VesselDrawing } from '../types';
 import { Modal } from './Modal';
 import { PDFPreview } from './PDFPreview';
 import { api } from '../utils/api';
 import { downloadFile } from '@/utils/download';
+import { copyToClipboard } from '@/utils/clipboard';
+import { showToast } from './Toast';
 
 interface DrawingPreviewModalProps {
   drawing: VesselDrawing | null;
@@ -45,6 +47,18 @@ export function DrawingPreviewModal({ drawing, onClose }: DrawingPreviewModalPro
   const [editingLog, setEditingLog] = useState<any>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editRemark, setEditRemark] = useState('');
+
+  // 分享弹窗状态
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [shareUrl, setShareUrl] = useState('');
+  const [sharePasscode, setSharePasscode] = useState('');
+  const [shareLoading, setShareLoading] = useState(false);
+  const [customPasscode, setCustomPasscode] = useState('');
+  const [shareConfig, setShareConfig] = useState({
+    expire_days: 7,
+    need_passcode: true,
+    allow_download: false,
+  });
 
   if (!drawing) return null;
   // 拖拽移动
@@ -96,6 +110,63 @@ export function DrawingPreviewModal({ drawing, onClose }: DrawingPreviewModalPro
       }
     } catch (error) {
       console.error('更新备注失败:', error);
+    }
+  };
+
+  // 创建分享链接
+  const handleCreateShare = async () => {
+    if (!drawing) return;
+    setShareLoading(true);
+    try {
+      const res = await api.post('/shares/create', {
+        drawing_id: drawing.id,
+        expire_days: shareConfig.expire_days,
+        need_passcode: shareConfig.need_passcode,
+        allow_download: shareConfig.allow_download,
+        custom_passcode: customPasscode || undefined,
+      });
+      if (res.code === 200) {
+        const url = res.data.share_url;
+        const passcode = res.data.passcode || '';
+        setShareUrl(url);
+        setSharePasscode(passcode);
+        const text = (shareConfig.need_passcode && passcode) ? `${url}\n提取码: ${passcode}` : url;
+        const success = await copyToClipboard(text);
+        if (success) {
+          showToast('success', '分享链接已复制到剪贴板');
+        } else {
+          showToast('info', '分享链接创建成功，请手动复制');
+        }
+      } else {
+        showToast('error', res.message || '创建失败');
+      }
+    } catch (error) {
+      console.error('创建分享失败:', error);
+      showToast('error', '创建分享链接失败');
+    } finally {
+      setShareLoading(false);
+    }
+  };
+
+  // 复制分享链接
+  const handleCopyShareLink = async () => {
+    const text = (shareConfig.need_passcode && sharePasscode) ? `${shareUrl}\n提取码: ${sharePasscode}` : shareUrl;
+    const success = await copyToClipboard(text);
+    if (success) {
+      showToast('success', '分享链接已复制到剪贴板');
+    } else {
+      showToast('error', '复制失败，请手动复制');
+    }
+  };
+
+  // 复制内部链接
+  const handleCopyInternalLink = async () => {
+    const url = `${window.location.origin}/#/share/internal/${drawing.id}`;
+    const success = await copyToClipboard(url);
+    if (success) {
+      showToast('success', '内部链接已复制到剪贴板');
+    } else {
+      showToast('error', '复制失败，请手动复制');
     }
   };
 
@@ -242,7 +313,7 @@ const handleDownload = (type: 'pdf' | 'dwg'|'preview' ) => {
 
   // 4. 根据类型动态拼接后端下载服务 URL (PDF 走 /uploads/pdf/，DWG 走 /uploads/dwg/)
   const subFolder = type === 'pdf' ? 'pdf' : type === 'dwg' ? 'dwg' : 'previews';
-  const downloadUrl = `http://192.168.110.188:3000/uploads/${subFolder}/${filename}?download=1`;
+  const downloadUrl = `http://localhost:3000/uploads/${subFolder}/${filename}?download=1`;
 
   // 5. 执行下载
   downloadFile(downloadUrl, { filename });
@@ -367,7 +438,7 @@ const handleDownload = (type: 'pdf' | 'dwg'|'preview' ) => {
                   >
                     {drawing.preview_image ? (
                       <img
-                        src={`http://192.168.110.188:3000${currentPreviewUrl}`}
+                        src={`http://localhost:3000${currentPreviewUrl}`}
                         alt={drawing.file_name}
                         className="border border-slate-300 rounded-lg bg-white shadow-sm pointer-events-none"
                         style={{ maxWidth: 'none', height: 'auto' }}
@@ -631,9 +702,14 @@ const handleDownload = (type: 'pdf' | 'dwg'|'preview' ) => {
               <Download className="w-4 h-4" />
               下载预览图片
             </button>
-            <button className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors text-sm font-medium dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600">
+            <button onClick={handleCopyInternalLink} className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors text-sm font-medium dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600">
               <Copy className="w-4 h-4" />
-              复制分享链接
+              复制内部链接
+            </button>
+            {/* 复制外部分享链接 */}
+             <button onClick={() => { setShowShareModal(true); setShareUrl(''); setSharePasscode(''); }} className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors text-sm font-medium dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600">
+              <Globe className="w-4 h-4" />
+              复制外部分享链接
             </button>
           </div>
           <div className="text-xs text-slate-500 dark:text-slate-400">
@@ -666,6 +742,116 @@ const handleDownload = (type: 'pdf' | 'dwg'|'preview' ) => {
                   保存
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* 外部分享弹窗 */}
+        {showShareModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]">
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl p-6 w-full max-w-lg">
+              <div className="flex items-center justify-between mb-5">
+                <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                  <Globe className="w-5 h-5 text-primary-600" />
+                  外部分享
+                </h3>
+                <button
+                  onClick={() => setShowShareModal(false)}
+                  className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                >
+                  <svg className="w-5 h-5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M18 6L6 18M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* 分享配置 */}
+              <div className="space-y-4 mb-5">
+                <div className="flex items-center justify-between py-2">
+                  <span className="text-sm text-slate-700 dark:text-slate-300">有效期</span>
+                  <select
+                    value={shareConfig.expire_days}
+                    onChange={(e) => setShareConfig({ ...shareConfig, expire_days: Number(e.target.value) })}
+                    className="text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-1.5 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  >
+                    <option value={0}>永久有效</option>
+                    <option value={1}>1 天</option>
+                    <option value={7}>7 天</option>
+                    <option value={30}>30 天</option>
+                    <option value={90}>90 天</option>
+                  </select>
+                </div>
+                <div className="py-2">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-slate-700 dark:text-slate-300">需要提取码</span>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={shareConfig.need_passcode}
+                        onChange={(e) => setShareConfig({ ...shareConfig, need_passcode: e.target.checked })}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-slate-200 peer-focus:ring-2 peer-focus:ring-primary-100 rounded-full peer dark:bg-slate-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:after:border-slate-500 peer-checked:bg-primary-600"></div>
+                    </label>
+                  </div>
+                  {shareConfig.need_passcode && (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={customPasscode}
+                        onChange={(e) => setCustomPasscode(e.target.value.toUpperCase().slice(0, 4))}
+                        placeholder="留空则自动生成4位提取码"
+                        maxLength={4}
+                        className="flex-1 text-center text-lg tracking-[0.3em] font-mono py-2 px-3 border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      />
+                      <span className="text-xs text-slate-400 whitespace-nowrap">4位字母/数字</span>
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center justify-between py-2">
+                  <span className="text-sm text-slate-700 dark:text-slate-300">允许下载 DWG 原图</span>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={shareConfig.allow_download}
+                      onChange={(e) => setShareConfig({ ...shareConfig, allow_download: e.target.checked })}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-slate-200 peer-focus:ring-2 peer-focus:ring-primary-100 rounded-full peer dark:bg-slate-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:after:border-slate-500 peer-checked:bg-primary-600"></div>
+                  </label>
+                </div>
+              </div>
+
+              {/* 创建/结果 */}
+              {!shareUrl ? (
+                <button
+                  onClick={handleCreateShare}
+                  disabled={shareLoading}
+                  className="w-full py-2.5 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 transition-colors disabled:opacity-50"
+                >
+                  {shareLoading ? '创建中...' : '创建分享链接'}
+                </button>
+              ) : (
+                <div className="space-y-3">
+                  <div className="bg-slate-50 dark:bg-slate-700 rounded-lg p-3">
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">分享链接</p>
+                    <p className="text-sm text-primary-600 dark:text-primary-400 font-mono break-all">{shareUrl}</p>
+                  </div>
+                  {sharePasscode && (
+                    <div className="bg-amber-50 dark:bg-amber-900/30 rounded-lg p-3">
+                      <p className="text-xs text-amber-600 dark:text-amber-400 mb-1">提取码</p>
+                      <p className="text-lg font-bold text-amber-700 dark:text-amber-300 tracking-widest">{sharePasscode}</p>
+                    </div>
+                  )}
+                  <button
+                    onClick={handleCopyShareLink}
+                    className="w-full py-2.5 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Copy className="w-4 h-4" />
+                    复制分享链接
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}

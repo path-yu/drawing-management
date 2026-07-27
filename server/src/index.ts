@@ -8,6 +8,7 @@ import userRoutes from './routes/userRoutes';
 import roleRoutes from './routes/roleRoutes';
 import drawingRoutes from './routes/drawingRoutes';
 import vesselLogsRoutes from './routes/vesselLogsRoutes';
+import shareRoutes from './routes/shareRoutes';
 import { success, fail } from './utils/response';
 // 启动时自动初始化数据库（如果表不存在）
 import './scripts/initDb';
@@ -211,21 +212,17 @@ app.use(morgan('dev'));
 
 // 静态文件服务 - 预览图和上传文件
 // 静态文件服务 - 支持预览与强制下载
-app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {
-  setHeaders: (res, filePath, req) => {
-    // 解析请求 URL 是否带有 ?download=1 或 ?download=true
-    const url = new URL(req.url, `http://${req.headers.host}`);
-    const isDownload = url.searchParams.get('download') === '1' || url.searchParams.get('download') === 'true';
+app.use('/uploads', (req, res, next) => {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const isDownload = url.searchParams.get('download') === '1' || url.searchParams.get('download') === 'true';
 
-    if (isDownload) {
-      // 告诉浏览器：这是附件，强制触发下载框
-      res.setHeader('Content-Disposition', 'attachment');
-    } else {
-      // 默认行为：允许在线预览 (inline)
-      res.setHeader('Content-Disposition', 'inline');
-    }
+  if (isDownload) {
+    res.setHeader('Content-Disposition', 'attachment');
+  } else {
+    res.setHeader('Content-Disposition', 'inline');
   }
-}));
+  next();
+}, express.static(path.join(__dirname, '../uploads')));
 
 
 // 健康检查
@@ -254,6 +251,7 @@ app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/roles', roleRoutes);
 app.use('/api/v1/drawings', drawingRoutes);
 app.use('/api/v1/logs', vesselLogsRoutes);
+app.use('/api/v1/shares', shareRoutes);
 
 // 404
 app.use((req, res) => {

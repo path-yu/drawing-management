@@ -281,7 +281,7 @@ router.post('/analyze', async (req: AuthRequest, res) => {
       created_at: now(),
       updated_at: now(),
       flow_direction: parsedData.flow_direction || '右进左出',
-      dwg_download_url:'http://192.168.110.188:3000/uploads/dwg/'+originalFileName,
+      dwg_download_url:'http://localhost:3000/uploads/dwg/'+originalFileName,
     });
     //写入日志表记录
     db.vessel_logs.insert({

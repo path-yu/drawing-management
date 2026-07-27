@@ -1,18 +1,20 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
+import { ToastContainer } from './components/Toast';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { UserManagementPage } from './pages/UserManagementPage';
 import { RoleManagementPage } from './pages/RoleManagementPage';
+import { ExternalShareView } from './pages/ExternalShareView';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
 function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <BrowserRouter>
+        <HashRouter>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
@@ -40,9 +42,16 @@ function App() {
                 </ProtectedRoute>
               }
             />
+            <Route path="/share/internal/:id" element={
+              <ProtectedRoute permission="drawing:view">
+                <DashboardPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/share/:token" element={<ExternalShareView />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
-        </BrowserRouter>
+          <ToastContainer />
+        </HashRouter>
       </AuthProvider>
     </ThemeProvider>
   );
