@@ -586,7 +586,11 @@ export function DashboardPage() {
       </div>
 
       {previewDrawing && (
-        <DrawingPreviewModal drawing={previewDrawing} onClose={() => setPreviewDrawing(null)} />
+        <DrawingPreviewModal
+          drawing={previewDrawing}
+          onClose={() => setPreviewDrawing(null)}
+          onDrawingUpdate={fetchDrawings}
+        />
       )}
 
       {showConfirmModal && (

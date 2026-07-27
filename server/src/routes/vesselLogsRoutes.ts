@@ -46,13 +46,13 @@ router.get('/list', (req: AuthRequest, res) => {
  * GET /api/v1/logs/:drawingId - 根据图纸ID获取所有日志
  */
 router.get('/:drawingId', authMiddleware, requirePermission('drawing:view'), (req: AuthRequest, res) => {
-  const drawingId = parseInt(req.params.drawingId, 10);
+  const drawingId = req.params.drawingId;
   
-  if (isNaN(drawingId)) {
+  if (!drawingId) {
     return res.status(400).json(fail('无效的图纸ID'));
   }
 
-  const logs = db.vessel_logs.find((log) => log.drawing_id === drawingId);
+  const logs = db.vessel_logs.find((log) => String(log.drawing_id) === drawingId);
   console.log(logs);
   // 按创建时间倒序
   logs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());

@@ -78,8 +78,8 @@ router.get('/search', authMiddleware, requirePermission('drawing:view'), (req: A
  * GET /api/v1/drawings/:id - 获取图纸详情
  */
 router.get('/:id', authMiddleware, requirePermission('drawing:view'), (req: AuthRequest, res) => {
-  const id = parseInt(req.params.id, 10);
-  const drawing = db.vessel_drawings.get((d) => d.id === id && d.is_deleted === 0);
+  const id = req.params.id;
+  const drawing = db.vessel_drawings.get((d) => String(d.id) === id && d.is_deleted === 0);
   if (!drawing) {
     return res.status(404).json(fail('图纸不存在'));
   }
@@ -141,28 +141,21 @@ router.post('/', authMiddleware, requirePermission('drawing:create'), (req: Auth
  * PUT /api/v1/drawings/:id - 修改图纸
  */
 router.put('/:id', authMiddleware, requirePermission('drawing:edit'), (req: AuthRequest, res) => {
-  const id = parseInt(req.params.id, 10);
+  const id = req.params.id;
   const b = req.body;
 
-  const existing = db.vessel_drawings.get((d) => d.id === id && d.is_deleted === 0);
+  const existing = db.vessel_drawings.get((d) => String(d.id) === id && d.is_deleted === 0);
   if (!existing) {
     return res.status(404).json(fail('图纸不存在'));
   }
 
-  db.vessel_drawings.update((d) => d.id === id, {
+  db.vessel_drawings.update((d) => String(d.id) === id, {
+    ...existing,
     material_code: b.material_code, version: b.version || 'V1.0', file_path: b.file_path,
-    file_name: b.file_name, updated_by: req.user!.username, remark: b.remark || null,
-    working_pressure: b.working_pressure, design_pressure: b.design_pressure,
-    design_temperature: b.design_temperature, volume: b.volume,
-    structure_type: b.structure_type, material: b.material, design_life: b.design_life || 20,
-    medium: b.medium, nominal_diameter: b.nominal_diameter, wall_thickness: b.wall_thickness,
-    total_height_or_length: b.total_height_or_length, weight: b.weight,
-    safety_valve_connection: b.safety_valve_connection || null, drain_connection: b.drain_connection || null,
-    inlet_connection: b.inlet_connection || null, outlet_connection: b.outlet_connection || null,
-    inlet_count: b.inlet_count || 1, outlet_count: b.outlet_count || 1, updated_at: now(),
+    remark: b.remark || null,
   });
-
-  const drawing = db.vessel_drawings.get((d) => d.id === id);
+  // 插入日志
+  const drawing = db.vessel_drawings.get((d) => String(d.id) === id);
   res.json(success(drawing, '图纸更新成功'));
 });
 
@@ -191,13 +184,13 @@ router.delete('/batch', authMiddleware, requirePermission('drawing:delete'), (re
  * DELETE /api/v1/drawings/:id - 删除图纸（软删除）
  */
 router.delete('/:id', authMiddleware, requirePermission('drawing:delete'), (req: AuthRequest, res) => {
-  const id = parseInt(req.params.id, 10);
-  const existing = db.vessel_drawings.get((d) => d.id === id && d.is_deleted === 0);
+  const id = req.params.id;
+  const existing = db.vessel_drawings.get((d) => String(d.id) === id && d.is_deleted === 0);
   if (!existing) {
     return res.status(404).json(fail('图纸不存在'));
   }
 
-  db.vessel_drawings.update((d) => d.id === id, { is_deleted: 1, updated_at: now() });
+  db.vessel_drawings.update((d) => String(d.id) === id, { is_deleted: 1, updated_at: now() });
   res.json(success(null, '图纸删除成功'));
 });
 
@@ -281,7 +274,7 @@ router.post('/analyze', async (req: AuthRequest, res) => {
       created_at: now(),
       updated_at: now(),
       flow_direction: parsedData.flow_direction || '右进左出',
-      dwg_download_url:'http://localhost:3000/uploads/dwg/'+originalFileName,
+      dwg_download_url: 'http://localhost:3000/uploads/dwg/' + originalFileName,
     });
     //写入日志表记录
     db.vessel_logs.insert({
@@ -311,8 +304,8 @@ router.post('/update', async (req: AuthRequest, res) => {
     const textContent = await extractTextFromPDF(pdfPath);
     //调用DeepSeek API解析
     const parsedData = await analyzePDFWithDeepSeek(textContent, pdfPath);
-    console.log(parsedData,'参数列表');
-    
+    console.log(parsedData, '参数列表');
+
     // 更新数据库
     db.vessel_drawings.update((d) => d.id === id, { version, updated_at: now(), remark: parsedData.remark || null });
     //生成PDF预览图

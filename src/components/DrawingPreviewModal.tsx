@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { ZoomIn, ZoomOut, Maximize2, Download, Copy, FileText, Layers, Ruler, ChevronLeft, ChevronRight, FileImage,Globe } from 'lucide-react';
+import { ZoomIn, ZoomOut, Maximize2, Download, Copy, FileText, Layers, Ruler, ChevronLeft, ChevronRight, FileImage,Globe, Pencil } from 'lucide-react';
 import { VesselDrawing } from '../types';
 import { Modal } from './Modal';
 import { PDFPreview } from './PDFPreview';
@@ -11,9 +11,10 @@ import { showToast } from './Toast';
 interface DrawingPreviewModalProps {
   drawing: VesselDrawing | null;
   onClose: () => void;
+  onDrawingUpdate?: () => void;
 }
 
-export function DrawingPreviewModal({ drawing, onClose }: DrawingPreviewModalProps) {
+export function DrawingPreviewModal({ drawing, onClose, onDrawingUpdate }: DrawingPreviewModalProps) {
   const [activeTab, setActiveTab] = useState<'params' | 'connections' | 'history'>('params');
   const [previewMode, setPreviewMode] = useState<'svg' | 'pdf'>('svg');
   const [zoom, setZoom] = useState(100);
@@ -47,6 +48,12 @@ export function DrawingPreviewModal({ drawing, onClose }: DrawingPreviewModalPro
   const [editingLog, setEditingLog] = useState<any>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editRemark, setEditRemark] = useState('');
+
+  // 编辑字段弹窗状态（物料编码、备注）
+  const [editingField, setEditingField] = useState<'material_code' | 'remark' | null>(null);
+  const [editFieldValue, setEditFieldValue] = useState('');
+  const [showEditFieldModal, setShowEditFieldModal] = useState(false);
+  const [savingField, setSavingField] = useState(false);
 
   // 分享弹窗状态
   const [showShareModal, setShowShareModal] = useState(false);
@@ -110,6 +117,37 @@ export function DrawingPreviewModal({ drawing, onClose }: DrawingPreviewModalPro
       }
     } catch (error) {
       console.error('更新备注失败:', error);
+    }
+  };
+
+  // 保存编辑字段（物料编码、备注）
+  const handleSaveField = async () => {
+    if (!drawing || !editingField) return;
+    setSavingField(true);
+    try {
+      const updateData: any = {};
+      if (editingField === 'material_code') {
+        updateData.material_code = editFieldValue;
+      } else if (editingField === 'remark') {
+        updateData.remark = editFieldValue;
+      }
+
+      const response = await api.put(`/drawings/${drawing.id}`, updateData);
+      if (response.code === 200) {
+        showToast('success', '保存成功');
+        setShowEditFieldModal(false);
+        // 刷新数据
+        if (onDrawingUpdate) {
+          onDrawingUpdate();
+        }
+      } else {
+        showToast('error', response.message || '保存失败');
+      }
+    } catch (error) {
+      console.error('保存失败:', error);
+      showToast('error', '保存失败');
+    } finally {
+      setSavingField(false);
     }
   };
 
@@ -528,6 +566,23 @@ const handleDownload = (type: 'pdf' | 'dwg'|'preview' ) => {
                       {drawing.structure_type}
                     </span>
                     <span className="badge badge-gray">{drawing.material}</span>
+                    {drawing.material_code && (
+                      <div className="flex items-center gap-1 ml-auto">
+                        <span className="text-xs text-slate-500 dark:text-slate-400">物料编码:</span>
+                        <span className="text-sm font-mono font-medium text-primary-600 dark:text-primary-400">{drawing.material_code}</span>
+                        <button
+                          onClick={() => {
+                            setEditingField('material_code');
+                            setEditFieldValue(drawing.material_code || '');
+                            setShowEditFieldModal(true);
+                          }}
+                          className="p-1 hover:bg-slate-200 dark:hover:bg-slate-600 rounded transition-colors"
+                          title="编辑物料编码"
+                        >
+                          <Pencil className="w-3 h-3 text-slate-500" />
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
@@ -582,14 +637,37 @@ const handleDownload = (type: 'pdf' | 'dwg'|'preview' ) => {
                       <span className="text-slate-500 dark:text-slate-400">修改人</span>
                       <span className="text-slate-800 font-medium dark:text-slate-100">{drawing.updated_by}</span>
                     </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-500 dark:text-slate-400">创建时间</span>
+                      <span className="text-slate-800 font-medium dark:text-slate-100">{drawing.created_at ? new Date(drawing.created_at).toLocaleString('zh-CN') : '-'}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-500 dark:text-slate-400">更新时间</span>
+                      <span className="text-slate-800 font-medium dark:text-slate-100">{drawing.updated_at ? new Date(drawing.updated_at).toLocaleString('zh-CN') : '-'}</span>
+                    </div>
                   </div>
 
-                  {drawing.remark && (
-                    <div className="mt-4">
-                      <p className="text-xs text-slate-500 mb-1 dark:text-slate-400">备注</p>
-                      <p className="text-sm text-slate-700 bg-slate-50 rounded-lg p-3 dark:text-slate-300 dark:bg-slate-700">{drawing.remark}</p>
+                  <div className="mt-4">
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-xs text-slate-500 dark:text-slate-400">备注</p>
+                      <button
+                        onClick={() => {
+                          setEditingField('remark');
+                          setEditFieldValue(drawing.remark || '');
+                          setShowEditFieldModal(true);
+                        }}
+                        className="flex items-center gap-1 text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 transition-colors"
+                      >
+                        <Pencil className="w-3 h-3" />
+                        编辑
+                      </button>
                     </div>
-                  )}
+                    {drawing.remark ? (
+                      <p className="text-sm text-slate-700 bg-slate-50 rounded-lg p-3 dark:text-slate-300 dark:bg-slate-700">{drawing.remark}</p>
+                    ) : (
+                      <p className="text-sm text-slate-400 bg-slate-50 rounded-lg p-3 dark:bg-slate-700/50 italic">暂无备注</p>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -740,6 +818,48 @@ const handleDownload = (type: 'pdf' | 'dwg'|'preview' ) => {
                   className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
                 >
                   保存
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 编辑字段弹窗（物料编码/备注） */}
+        {showEditFieldModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]">
+            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl p-6 w-full max-w-md">
+              <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-4">
+                编辑{editingField === 'material_code' ? '物料编码' : '备注'}
+              </h3>
+              {editingField === 'remark' ? (
+                <textarea
+                  value={editFieldValue}
+                  onChange={(e) => setEditFieldValue(e.target.value)}
+                  className="w-full h-32 p-3 border border-slate-200 dark:border-slate-600 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100"
+                  placeholder="请输入备注内容..."
+                />
+              ) : (
+                <input
+                  type="text"
+                  value={editFieldValue}
+                  onChange={(e) => setEditFieldValue(e.target.value)}
+                  className="w-full p-3 border border-slate-200 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 font-mono"
+                  placeholder="请输入物料编码..."
+                />
+              )}
+              <div className="flex items-center justify-end gap-3 mt-4">
+                <button
+                  onClick={() => setShowEditFieldModal(false)}
+                  className="px-4 py-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleSaveField}
+                  disabled={savingField}
+                  className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {savingField ? '保存中...' : '保存'}
                 </button>
               </div>
             </div>
