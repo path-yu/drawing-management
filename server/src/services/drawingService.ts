@@ -5,6 +5,21 @@ import 'dotenv/config';
 import PDFParser from 'pdf2json';
 import { pdf } from 'pdf-to-img'; // 引入 pdf-to-img
 
+// 抑制 pdf.js 的控制台警告
+const originalConsoleWarn = console.warn;
+console.warn = (...args: any[]) => {
+  const msg = typeof args[0] === 'string' ? args[0] : '';
+  if (
+    msg.includes('Setting up fake worker') ||
+    msg.includes('TT: complementing a missing function tail') ||
+    msg.includes('Unsupported: field.type of Square') ||
+    msg.includes('NOT valid form element')
+  ) {
+    return;
+  }
+  originalConsoleWarn.apply(console, args);
+};
+
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || '';
 
 // 预览图保存目录
@@ -187,6 +202,7 @@ export async function analyzePDFWithDeepSeek(pagesText: string[], filePath: stri
   "version": "版本号,",
   "created_by": "创建人",
   "updated_by": "更新人",
+  "standard": "规格（从图中提取，例如CQG20/1.1）,规格在规格文字的右侧",
   "title": "名称（从图纸中提取，如储气罐或者氧气储罐之类）",
   "remark": "备注（从图纸中提取，包含图纸日期等信息，例如2026.6.25，例如100%RT，酸洗，抛光，脱脂之类的特殊处理）",
   "working_pressure": 工作压力数值（number类型）,
@@ -197,7 +213,7 @@ export async function analyzePDFWithDeepSeek(pagesText: string[], filePath: stri
   "design_life": 使用年限数值（number类型）,
   "medium": "介质名称",
   "nominal_diameter": 公称直径mm（number类型）从图中提取，例如∅2400，∅2200之类的,
-  "wall_thickness": 壁厚mm（number类型）从图中提取，它在公称直径尺寸线立式（左侧or右侧），卧式（上面or下面）附近查找板厚标注，提取该具体数值,
+  "wall_thickness": 壁厚mm（number类型）从图中提取，它在公称直径尺寸线附件,如果是立式则在（左侧or右侧），卧式在（上方or下方）附近查找板厚标注，提取该具体数值,
   "total_height_or_length": 总高或总长mm（number类型）,
   "weight": 重量kg（number类型）,
   "safety_valve_connection": "安全阀接口规格",
@@ -219,8 +235,10 @@ export async function analyzePDFWithDeepSeek(pagesText: string[], filePath: stri
 - outlet_connection: 找到用途是 "出气口" 的上一行或下一行（通常是规格）。
 - inlet_count: 统计用途为 "进气口" 的行数量（通常为1）。
 - outlet_count: 统计用途为 "出气口" 的行数量（通常为1）。
-
-1. medium: 介质名称，储气罐通常为"空气"
+. wall_thickness (壁厚):
+   - 压力容器筒体壁厚通常为 4~30 之间的较小整数（如 6, 8, 10, 12, 14, 16 等）。
+   - 在图纸筒体外侧/上方标注中，若存在孤立的 两位数字（如 12），且不属于管口编号（N1-N6）和定位间距（通常大于50），即为壁厚数值。
+. medium: 介质名称，储气罐通常为"空气"
 
 flow_direction的值必须严格判断为 "右进左出" 或 "左进右出"。
 1. 先查看"管口表"，找到用途为"进气口"的管口序号（例如 N6）。

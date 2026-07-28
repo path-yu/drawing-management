@@ -14,6 +14,7 @@ import {
   LayoutDashboard,
   Moon,
   Sun,
+  Share2,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -60,11 +61,21 @@ export function Header({ onSearch, onCreate, onBatchUpload }: HeaderProps) {
     { label: '图纸管理', path: '/', icon: LayoutDashboard },
     { label: '用户管理', path: '/users', icon: Users, permission: 'user:manage' },
     { label: '角色权限', path: '/roles', icon: Shield, permission: 'role:manage' },
+    { label: '分享管理', path: '/shares', icon: Share2, permission: 'share:manage' },
   ];
 
-  const isDashboard = location.pathname === '/';
+  const isDashboard = location.pathname === '/' || location.pathname.startsWith('/share/internal');
   const isUserPage = location.pathname === '/users';
   const isRolePage = location.pathname === '/roles';
+
+  // 判断当前应该高亮的菜单项
+  const getActiveMenuPath = () => {
+    if (location.pathname.startsWith('/share/internal')) {
+      return '/'; // 内部分享页面高亮图纸管理
+    }
+    return location.pathname;
+  };
+  const activeMenuPath = getActiveMenuPath();
 
   return (
     <header className="bg-white border-b border-slate-200 px-6 py-3 sticky top-0 z-40 dark:bg-slate-800 dark:border-slate-700">
@@ -83,7 +94,7 @@ export function Header({ onSearch, onCreate, onBatchUpload }: HeaderProps) {
           <nav className="flex items-center gap-1 ml-4">
             {navItems.map((item) => {
               const Icon = item.icon;
-              const isActive = location.pathname === item.path;
+              const isActive = activeMenuPath === item.path;
               const content = (
                 <button
                   key={item.path}

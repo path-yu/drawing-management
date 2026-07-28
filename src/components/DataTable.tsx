@@ -59,36 +59,36 @@ export function DataTable({ drawings, onPreview, onExport, onEdit }: DataTablePr
           {drawings.map((drawing) => (
             <tr key={drawing.id} className="hover:bg-slate-50 transition-colors dark:hover:bg-slate-700">
               <td className="px-4 py-3 text-sm font-medium text-primary-600 dark:text-primary-400">
-                {drawing.material_code}
+                {drawing.material_code || '-'}
               </td>
               <td className="px-4 py-3 text-sm text-slate-800 dark:text-slate-100">
                 {drawing.file_name}
               </td>
               <td className="px-4 py-3">
                 <span className={`badge ${drawing.structure_type === '立式' ? 'badge-primary' : 'badge-orange'}`}>
-                  {drawing.structure_type}
+                  {drawing.structure_type || '-'}
                 </span>
               </td>
               <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
-                {drawing.volume.toFixed(1)}
+                {drawing.volume != null ? drawing.volume.toFixed(1) : '-'}
               </td>
               <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
-                {drawing.design_pressure.toFixed(2)}
+                {drawing.design_pressure != null ? drawing.design_pressure.toFixed(2) : '-'}
               </td>
               <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
-                {drawing.nominal_diameter}
+                {drawing.nominal_diameter != null ? `${drawing.nominal_diameter}` : '-'}
               </td>
               <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
-                {drawing.material}
+                {drawing.material || '-'}
               </td>
               <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
-                {drawing.medium}
+                {drawing.medium || '-'}
               </td>
               <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
-                {drawing.weight.toLocaleString()}
+                {drawing.weight != null ? drawing.weight.toLocaleString() : '-'}
               </td>
               <td className="px-4 py-3">
-                <span className="badge badge-gray">{drawing.version}</span>
+                <span className="badge badge-gray">{drawing.version || '-'}</span>
               </td>
               <td className="px-4 py-3">
                 <div className="flex items-center gap-1">

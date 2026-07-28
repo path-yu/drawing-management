@@ -1,10 +1,10 @@
-import { Router } from 'express';
+import { Router, IRouter } from 'express';
 import { db } from '../database/db';
 import { AuthRequest } from '../types';
 import { success, fail } from '../utils/response';
 import { authMiddleware, requirePermission } from '../middleware/auth';
 
-const router = Router();
+const router: IRouter = Router();
 
 /**
  * GET /api/v1/logs/list - 获取日志列表（分页）

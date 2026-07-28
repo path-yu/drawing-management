@@ -230,16 +230,16 @@ app.get('/api/health', (req, res) => {
   res.json(success({ status: 'ok', timestamp: new Date().toISOString() }));
 });
 app.get('/test', async(req, res) => {
-  let pdfPath = 'D:\\GitCode\\drawing-management\\server\\uploads\\PDF\\CQG20-0.88（DN300JC）.pdf';
+  let pdfPath = 'D:\\GitCode\\drawing-management\\server\\uploads\\pdf\\WCQG8-1.76.pdf.pdf';
   try {
     const textContent = await extractTextFromPDF(pdfPath);
     console.log(textContent);
     
-    //调用DeepSeek API解析
+    // //调用DeepSeek API解析
     const parsedData = await analyzePDFWithDeepSeek(textContent, pdfPath);
     console.log(parsedData);
     
-  res.json(success(null, '测试成功'));
+  res.json(success(textContent, '测试成功'));
   } catch (error: any) {
     console.error('测试失败:', error);
     res.status(500).json(fail(`测试失败: ${error.message}`));

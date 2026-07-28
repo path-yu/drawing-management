@@ -1018,17 +1018,17 @@
 
 (princ "\n--- BESA_ALL 加载成功，直接输入 BESA_ALL 运行 ---")
 (princ)
-
 ;; ==========================================================
 ;; 11. 智能全图 A4 导出并推送接口 (命令: BESA_A4)
 ;; 逻辑：导出至 D:\GitCode\drawing-management\PDF 
 ;;      完成完调用后端 API 分析接口
 ;; ==========================================================
-(defun c:BESA_A4 (/ dwg_fullname dwg_name output_dir target_pdf_path
-                 pdf_list box_list final_list ss i ent obj ll ur minpt maxpt w h area 
-                 ratio target_size cx cy idx custom_pdf_name default_generated 
-                 f_box f_p1 f_p2 is_inside page_count box dwg_path file_name
-                 single_pdf_path) 
+(defun c:BESA_A4 (/ dwg_fullname dwg_name output_dir target_pdf_path temp_dir 
+                  pdf_list box_list final_list ss i ent obj ll ur minpt maxpt w h area 
+                  ratio target_size cx cy idx custom_name default_generated temp_pdf 
+                  output_pdf cmd_line shell_obj f_box f_p1 f_p2 is_inside page_count 
+                  box dwg_path file_name
+                 ) 
   (vl-load-com)
   (setvar "CMDECHO" 0)
 
@@ -1049,12 +1049,14 @@
       (setq file_name dwg_fullname)
     )
   )
-
-  ;; 设置固定导出网络共享目录：\\Desktop-llroqqp\pdf
+  ;; 设置固定导出目录：D:\GitCode\drawing-management\PDF
   (setq output_dir "\\\\Desktop-llroqqp\\pdf")
   (if (not (vl-file-directory-p output_dir)) 
     (vl-mkdir output_dir)
   )
+
+  ;; 最终导出的 PDF 路径
+  (setq target_pdf_path (strcat output_dir "\\" dwg_name ".pdf"))
 
   (princ (strcat "\n[A4全图扫描中...] 当前文件: " dwg_name "，正在搜寻所有符合要求的图框..."))
 
@@ -1139,28 +1141,30 @@
 
           (setq target_size "A4")
 
-          ;; 先上传源 DWG 文件至 BESA 服务器（仅上传一次）
-          (c:BESA_UPLOAD_BIN (strcat dwg_path dwg_fullname))
-
           ;; ==========================================================
-          ;; 情况 A：全局仅有 1 张图纸 —— 保持原名导出
+          ;; 情况 A：全局仅有 1 张图纸 —— 直接导出目标目录同名 PDF
           ;; ==========================================================
           (if (= page_count 1) 
             (progn 
-              (princ (strcat "\n[识别成功] 识别到 1 张图纸，直接输出单页 A4..."))
+              (princ (strcat "\n[识别成功] 识别到 1 张图纸，直接输出 A4 至指定目录..."))
 
               (setq box   (car final_list)
                     ent   (nth 1 box)
                     minpt (nth 2 box)
                     maxpt (nth 3 box)
               )
-              (setq target_pdf_path (strcat output_dir "\\" dwg_name ".pdf"))
 
-              ;; 直接导出
+              ;; 直接导出至固定目录名称
               (export_single_pdf ent minpt maxpt target_size dwg_name)
 
-              ;; 移动至目标网络目录
-              (setq default_generated (strcat (getenv "USERPROFILE") "\\Desktop\\" dwg_name ".pdf"))
+              ;; 若出图函数默认导出了桌面，将其移动至指定的目标目录
+              (setq default_generated (strcat (getenv "USERPROFILE") 
+                                              "\\Desktop\\"
+                                              dwg_name
+                                              ".pdf"
+                                      )
+              )
+              
               (if (findfile default_generated) 
                 (progn 
                   (if (findfile target_pdf_path) (vl-file-delete target_pdf_path))
@@ -1169,24 +1173,41 @@
                 )
               )
 
-              (princ (strcat "\n[导出完成] 单页 A4 PDF 已保存至: " target_pdf_path))
-
-              ;; 单图分析调用
+              (princ "\n==================================================")
+              (princ (strcat "\n[导出完成！] 单页 A4 PDF 已保存至: " target_pdf_path))
+              (princ "\n==================================================\n")
+              ;; 上传 dwg 文件至 BESA 服务器
+              (c:BESA_UPLOAD_BIN (strcat dwg_path dwg_fullname))
+             
+              ;; 修改后：传入单张图纸的实体 (list (nth 1 box))
               (send_api_analyze 
                 (strcat dwg_path file_name)
                 file_name
                 target_pdf_path
-                (list ent)
+                (list (nth 1 box))
               )
             )
 
             ;; ==========================================================
-            ;; 情况 B：有 2 张及以上图纸 —— 独立导出为多个单页 PDF
+            ;; 情况 B：有 2 张及以上图纸 —— 逐页导出并调用 PDF24 合并至目标目录
             ;; ==========================================================
             (progn 
-              (princ (strcat "\n[识别成功] 匹配到 " (itoa page_count) " 张图纸，开始逐个拆分导出 PDF..."))
+              (princ 
+                (strcat "\n[识别成功] 匹配到 " (itoa page_count) " 张图纸，开始按 A4 逐页导出并合并...")
+              )
 
-              (setq idx 1)
+              ;; 创建独立临时工作文件夹
+              (setq temp_dir (strcat (getenv "TEMP") 
+                                     "\\cad_pdf_merge_a4_"
+                                     (rtos (getvar "CDATE") 2 0)
+                                     "\\"
+                             )
+              )
+              (if (not (vl-file-directory-p temp_dir)) (vl-mkdir temp_dir))
+
+              (setq idx      1
+                    pdf_list '()
+              )
 
               (foreach box final_list 
                 (setq ent   (nth 1 box)
@@ -1194,47 +1215,82 @@
                       maxpt (nth 3 box)
                 )
 
-                ;; 生成带编号的文件名：如 "DWG文件名_01", "DWG文件名_02"
-                (setq custom_pdf_name 
-                      (strcat dwg_name "_" 
-                              (if (< idx 10) 
-                                (strcat "0" (itoa idx)) 
-                                (itoa idx)
-                              )
-                      )
+                (setq custom_name (strcat "temp_page_" 
+                                          (if (< idx 10) 
+                                            (strcat "00" (itoa idx))
+                                            (if (< idx 100) 
+                                              (strcat "0" (itoa idx))
+                                              (itoa idx)
+                                            )
+                                          )
+                                  )
                 )
 
-                (setq single_pdf_path (strcat output_dir "\\" custom_pdf_name ".pdf"))
+                (export_single_pdf ent minpt maxpt target_size custom_name)
 
-                ;; 导出单页 PDF
-                (export_single_pdf ent minpt maxpt target_size custom_pdf_name)
+                (setq default_generated (strcat (getenv "USERPROFILE") 
+                                                "\\Desktop\\"
+                                                custom_name
+                                                ".pdf"
+                                        )
+                )
+                (setq temp_pdf (strcat temp_dir custom_name ".pdf"))
 
-                ;; 将导出的桌面文件移动至目标网络目录
-                (setq default_generated (strcat (getenv "USERPROFILE") "\\Desktop\\" custom_pdf_name ".pdf"))
                 (if (findfile default_generated) 
                   (progn 
-                    (if (findfile single_pdf_path) (vl-file-delete single_pdf_path))
-                    (vl-file-copy default_generated single_pdf_path)
+                    (vl-file-copy default_generated temp_pdf)
                     (vl-file-delete default_generated)
+                    (setq pdf_list (cons temp_pdf pdf_list))
                   )
-                )
-
-                (princ (strcat "\n -> [" (itoa idx) "/" (itoa page_count) "] 单页已导出: " single_pdf_path))
-
-                ;; 针对该独立的单页 PDF 和对应的图框实体发起 AI 解析回调
-                (send_api_analyze 
-                  (strcat dwg_path file_name)
-                  file_name
-                  single_pdf_path
-                  (list ent)
                 )
 
                 (setq idx (1+ idx))
               )
 
-              (princ "\n==================================================")
-              (princ (strcat "\n[全部完成！] 共导出 " (itoa page_count) " 个独立单页 PDF 至: " output_dir))
-              (princ "\n==================================================\n")
+              (setq pdf_list (reverse pdf_list))
+
+              ;; 调用 PDF24 进行静默合并至指定的 target_pdf_path
+              (if (> (length pdf_list) 0) 
+                (progn 
+                  (princ 
+                    (strcat "\n[合并中...] 正在合并 " 
+                            (itoa (length pdf_list))
+                            " 页 A4 PDF..."
+                    )
+                  )
+
+                  (setq cmd_line (strcat "pdf24-DocTool.exe -join -profile none -outputFile \"" 
+                                         target_pdf_path
+                                         "\""
+                                 )
+                  )
+
+                  (foreach pdf pdf_list 
+                    (setq cmd_line (strcat cmd_line " \"" pdf "\""))
+                  )
+
+                  (setq shell_obj (vlax-create-object "WScript.Shell"))
+                  (vlax-invoke-method shell_obj "Run" cmd_line 0 T)
+                  (vlax-release-object shell_obj)
+
+                  ;; 清理临时单页文件
+                  (foreach pdf pdf_list 
+                    (if (findfile pdf) (vl-file-delete pdf))
+                  )
+
+                  (princ "\n==================================================")
+                  (princ (strcat "\n[全部完成！] A4 多页合并 PDF 已保存至: " target_pdf_path))
+                  (princ "\n==================================================\n")
+
+                  ;; 发送 HTTP POST 回调请求
+                  (send_api_analyze 
+                    (strcat dwg_path file_name)
+                    file_name
+                    target_pdf_path
+                  )
+                )
+                (princ "\n[错误] 临时单页 PDF 生成失败。")
+              )
             )
           )
         )

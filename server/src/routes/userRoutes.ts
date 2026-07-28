@@ -1,11 +1,11 @@
-import { Router } from 'express';
+import { Router, IRouter } from 'express';
 import bcrypt from 'bcryptjs';
 import { db } from '../database/db';
 import { AuthRequest } from '../types';
 import { success, fail } from '../utils/response';
 import { authMiddleware, requirePermission, getUserWithPermissions } from '../middleware/auth';
 
-const router = Router();
+const router: IRouter = Router();
 const now = () => new Date().toISOString();
 
 /**

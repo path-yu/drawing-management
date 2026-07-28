@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Shield, Plus, Edit2, Trash2, Users, FileText, Eye, Download, Upload, Settings } from 'lucide-react';
+import { Shield, Plus, Edit2, Trash2, Users, FileText, Eye, Download, Upload, Settings, Share2 } from 'lucide-react';
 import { Header } from '../components/Header';
 import { Modal, ConfirmModal } from '../components/Modal';
 import { api } from '../utils/api';
@@ -26,6 +26,7 @@ const permissionGroups = [
   { key: 'drawing', label: '图纸管理', icon: FileText },
   { key: 'user', label: '用户管理', icon: Users },
   { key: 'role', label: '角色管理', icon: Shield },
+  { key: 'share', label: '分享管理', icon: Share2 },
 ];
 
 export function RoleManagementPage() {
@@ -219,7 +220,7 @@ export function RoleManagementPage() {
   };
 
   const isSystemRole = (code: string) =>
-    ['super_admin', 'admin', 'engineer', 'designer', 'viewer'].includes(code);
+    ['super_admin'].includes(code);
 
   return (
     <div className="h-screen flex flex-col bg-slate-50">
@@ -302,18 +303,28 @@ export function RoleManagementPage() {
                     </div>
 
                     <div className="flex flex-wrap gap-1.5">
-                      {allPermissions
-                        .filter((p) => p.code.startsWith('drawing:'))
-                        .slice(0, 4)
-                        .map((p) => (
-                          <span
-                            key={p.id}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 bg-white/70 text-slate-600 rounded-md text-xs"
-                          >
-                            {getPermIcon(p.code)}
-                            {p.name}
-                          </span>
-                        ))}
+                      {role.permissions
+                        ? role.permissions.slice(0, 4).map((p) => (
+                            <span
+                              key={p.id}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 bg-white/70 text-slate-600 rounded-md text-xs"
+                            >
+                              {getPermIcon(p.code)}
+                              {p.name}
+                            </span>
+                          ))
+                        : allPermissions
+                            .filter((p) => p.code.startsWith('drawing:'))
+                            .slice(0, 4)
+                            .map((p) => (
+                              <span
+                                key={p.id}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 bg-white/70 text-slate-600 rounded-md text-xs"
+                              >
+                                {getPermIcon(p.code)}
+                                {p.name}
+                              </span>
+                            ))}
                       {permCount > 4 && (
                         <span className="inline-flex items-center px-2 py-0.5 bg-white/70 text-slate-500 rounded-md text-xs">
                           +{Math.max(0, permCount - 4)}

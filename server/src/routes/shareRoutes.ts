@@ -183,4 +183,163 @@ router.post('/public/:token/verify', (req, res) => {
   }
 });
 
+// ==================== 分享管理接口 (需认证) ====================
+
+/**
+ * GET /api/v1/shares/list - 获取分享列表 (需认证)
+ */
+router.get('/list', authMiddleware, (req: AuthRequest, res) => {
+  try {
+    const { page = 1, pageSize = 20, type } = req.query;
+    const pageNum = parseInt(page as string) || 1;
+    const size = parseInt(pageSize as string) || 20;
+
+    let shares = db.shares.all();
+
+    // 按类型筛选: internal / external
+    if (type === 'internal') {
+      shares = shares.filter((s) => s.type === 'internal');
+    } else if (type === 'external') {
+      shares = shares.filter((s) => s.type !== 'internal');
+    }
+
+    // 按创建时间降序
+    shares.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    const total = shares.length;
+    const offset = (pageNum - 1) * size;
+    const pagedShares = shares.slice(offset, offset + size);
+
+    // 关联图纸信息
+    const enrichedShares = pagedShares.map((share) => {
+      const drawing = db.vessel_drawings.get((d) => d.id === share.drawing_id);
+      return {
+        ...share,
+        drawing_name: drawing ? drawing.file_name : '未知图纸',
+        material_code: drawing ? drawing.material_code : '',
+      };
+    });
+
+    res.json(success({
+      list: enrichedShares,
+      total,
+      page: pageNum,
+      pageSize: size,
+    }));
+  } catch (error: any) {
+    console.error('获取分享列表失败:', error);
+    res.status(500).json(fail('获取分享列表失败'));
+  }
+});
+
+/**
+ * PUT /api/v1/shares/:id - 更新分享记录 (需认证)
+ */
+router.put('/:id', authMiddleware, (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const { expire_days, allow_download, passcode, need_passcode } = req.body;
+
+    const share = db.shares.get((s) => s.id === id);
+    if (!share) {
+      return res.status(404).json(fail('分享记录不存在'));
+    }
+
+    const updates: any = {};
+
+    if (expire_days !== undefined) {
+      if (expire_days > 0) {
+        const expireDate = new Date();
+        expireDate.setDate(expireDate.getDate() + expire_days);
+        updates.expire_at = expireDate.toISOString();
+      } else {
+        updates.expire_at = null;
+      }
+    }
+
+    if (allow_download !== undefined) {
+      updates.allow_download = allow_download;
+    }
+
+    if (need_passcode !== undefined) {
+      if (need_passcode) {
+        if (passcode && passcode.length === 4) {
+          updates.passcode = passcode.toUpperCase();
+        } else if (!share.passcode) {
+          updates.passcode = generatePasscode();
+        }
+      } else {
+        updates.passcode = null;
+      }
+    }
+
+    db.shares.update((s) => s.id === id, updates);
+
+    res.json(success(null, '更新成功'));
+  } catch (error: any) {
+    console.error('更新分享失败:', error);
+    res.status(500).json(fail('更新分享失败'));
+  }
+});
+
+/**
+ * DELETE /api/v1/shares/:id - 删除分享记录 (需认证)
+ */
+router.delete('/:id', authMiddleware, (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const count = db.shares.delete((s) => s.id === id);
+    if (count === 0) {
+      return res.status(404).json(fail('分享记录不存在'));
+    }
+    res.json(success(null, '删除成功'));
+  } catch (error: any) {
+    console.error('删除分享失败:', error);
+    res.status(500).json(fail('删除分享失败'));
+  }
+});
+
+/**
+ * POST /api/v1/shares/create-internal - 创建内部分享链接 (需认证)
+ */
+router.post('/create-internal', authMiddleware, (req: AuthRequest, res) => {
+  try {
+    const { drawing_id } = req.body;
+
+    if (!drawing_id) {
+      return res.status(400).json(fail('缺少图纸ID'));
+    }
+
+    const drawing = db.vessel_drawings.get((d) => d.id === drawing_id && d.is_deleted === 0);
+    if (!drawing) {
+      return res.status(404).json(fail('图纸不存在'));
+    }
+
+    const token = generateToken();
+
+    const share = db.shares.insert({
+      drawing_id,
+      token,
+      passcode: null,
+      type: 'internal',
+      allow_download: false,
+      expire_at: null,
+      created_by: req.user!.id,
+      created_at: new Date().toISOString(),
+    });
+
+    const share_url = `http://localhost:8081/#/share/internal/${drawing_id}`;
+
+    res.json(success({
+      id: share.id,
+      token,
+      share_url,
+      type: 'internal',
+    }));
+  } catch (error: any) {
+    console.error('创建内部分享失败:', error);
+    res.status(500).json(fail('创建内部分享失败'));
+  }
+});
+
 export default router;

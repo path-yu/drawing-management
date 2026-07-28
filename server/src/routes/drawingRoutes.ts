@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import fs from 'fs';
+import fs from 'fs-extra';
 import path from 'path';
 import { db } from '../database/db';
 import { AuthRequest } from '../types';
@@ -151,7 +151,7 @@ router.put('/:id', authMiddleware, requirePermission('drawing:edit'), (req: Auth
 
   db.vessel_drawings.update((d) => String(d.id) === id, {
     ...existing,
-    material_code: b.material_code, version: b.version || 'V1.0', file_path: b.file_path,
+    material_code: b.material_code,
     remark: b.remark || null,
   });
   // 插入日志
@@ -197,8 +197,9 @@ router.delete('/:id', authMiddleware, requirePermission('drawing:delete'), (req:
 /**
  * POST /api/v1/drawings/analyze - 解析图纸内容并入库
  */
+
 router.post('/analyze', async (req: AuthRequest, res) => {
-  const { dwg_file_path, file_name, pdfPath } = req.body;
+  let { dwg_file_path, file_name, pdfPath } = req.body;
 
   if (!pdfPath) {
     return res.status(400).json(fail('缺少必填字段: pdfPath'));
@@ -208,40 +209,66 @@ router.post('/analyze', async (req: AuthRequest, res) => {
     return res.status(400).json(fail(`文件不存在: ${pdfPath}`));
   }
 
+  const isMultiDrawing = dwg_file_path.includes('&');
+  const pdfDir = path.join(__dirname, '../../uploads/pdf');
+
   try {
-    // 1. 提取PDF文本内容
-    const textContent = await extractTextFromPDF(pdfPath);
-
-    // 2. 调用DeepSeek API解析
-    const parsedData = await analyzePDFWithDeepSeek(textContent, pdfPath);
-
-    // 3. 保存原始PDF文件到服务器（检查是否已在服务器目录中，避免重复复制）
-    const pdfDir = path.join(__dirname, '../../uploads/pdf');
+    // 1. 确保服务器上传目录存在 (提至最前)
     if (!fs.existsSync(pdfDir)) {
       fs.mkdirSync(pdfDir, { recursive: true });
     }
 
-    const originalFileName = path.basename(pdfPath);
-    // 检查文件是否已经在服务器目录中
-    const existingPath = path.join(pdfDir, originalFileName);
-    let pdfFilePath: string;
+    // 2. 提取 PDF 文本内容并调用 DeepSeek API 解析
+    const textContent = await extractTextFromPDF(pdfPath);
+    const parsedData = await analyzePDFWithDeepSeek(textContent, pdfPath);
 
-    if (fs.existsSync(existingPath)) {
-      // 文件已存在，直接使用，不再重复复制
-      pdfFilePath = `/uploads/pdf/${originalFileName}`;
+    // 3. 确定最终保存在服务器的文件名 (pdfFileName)
+    let finalPdfFileName: string;
+    const originalFileName = path.basename(pdfPath);
+
+    if (isMultiDrawing) {
+      // 包含多个图纸：按 "容积-设计压力.pdf" 格式重命名
+      const volume = parsedData.volume || 0;
+      const design_pressure = parsedData.design_pressure || 0;
+      //把CQG20/1.1 / 替换为-
+      if(parsedData.standard){
+        parsedData.standard = parsedData.standard.replace(/\//g, '-');
+      }
+      finalPdfFileName = parsedData.standard || originalFileName;
+
+      // 冲突检测：如果文件名已存在，增加时间戳防止覆盖
+      const targetCheckPath = path.join(pdfDir, finalPdfFileName);
+      if (fs.existsSync(targetCheckPath)) {
+        console.log('文件名已存在，追加时间戳区分');
+        finalPdfFileName = `${Date.now()}_${volume}-${design_pressure}.pdf`;
+      }else{
+        finalPdfFileName = `${parsedData.standard}.pdf`;
+      }
     } else {
-      // 文件不在服务器目录，需要复制并重命名
-      const pdfFileName = `${parsedData.material_code}_${Date.now()}_${originalFileName}`;
-      const destPdfPath = path.join(pdfDir, pdfFileName);
-      fs.copyFileSync(pdfPath, destPdfPath);
-      pdfFilePath = `/uploads/pdf/${pdfFileName}`;
+      // 单张图纸：增加物料编码和时间戳防止同名覆盖
+      finalPdfFileName = `${originalFileName}.pdf`;
     }
 
-    // 4. 生成PDF预览图
+    // 4. 移动/转存文件到 uploads/pdf 目录 (兼容跨网络驱动器/跨盘符移动)
+    const destPdfPath = path.join(pdfDir, finalPdfFileName);
+
+    // 使用 fs-extra 的 moveSync，自动处理 EXDEV 跨盘符问题（先复制后删除原文件）
+    fs.moveSync(pdfPath, destPdfPath, { overwrite: true });
+
+    // 更新变量供后续预览生成和数据库存储使用
+    pdfPath = destPdfPath; // 此时 pdfPath 指向本地 uploads/pdf 里的绝对路径
+    const pdfFilePath = `/uploads/pdf/${finalPdfFileName}`; // 数据库存储的相对 URL 路径
+    file_name = finalPdfFileName.replace(/\.pdf$/i, ''); // 剔除后缀作为 file_name
+
+    // 5. 生成 PDF 预览图
     const previewImage = await generatePDFPreview(pdfPath, parsedData.version || '1');
 
-    // 5. 插入数据库
-    parsedData.remark = `${parsedData.remark, file_name.includes('安全阀侧放') || file_name?.toLowerCase().includes('aqfcf') ? '安全阀侧放' : ''}`
+    // 6. 整理 Remark 备注字段
+    const isAqfcf = file_name.includes('安全阀侧放') || file_name.toLowerCase().includes('aqfcf');
+    const extraRemark = isAqfcf ? '安全阀侧放' : '';
+    const finalRemark = [parsedData.remark, extraRemark].filter(Boolean).join(' | ');
+
+    // 7. 插入数据库
     const drawing = db.vessel_drawings.insert({
       material_code: parsedData.material_code,
       version: parsedData.version || '1',
@@ -251,7 +278,7 @@ router.post('/analyze', async (req: AuthRequest, res) => {
       preview_image: previewImage,
       created_by: req.user?.username || '',
       updated_by: req.user?.username || '',
-      remark: parsedData.remark || null,
+      remark: finalRemark || null,
       working_pressure: parsedData.working_pressure,
       design_pressure: parsedData.design_pressure,
       design_temperature: parsedData.design_temperature,
@@ -273,10 +300,12 @@ router.post('/analyze', async (req: AuthRequest, res) => {
       is_deleted: 0,
       created_at: now(),
       updated_at: now(),
+      standard: parsedData.standard || null,
       flow_direction: parsedData.flow_direction || '右进左出',
       dwg_download_url: 'http://localhost:3000/uploads/dwg/' + originalFileName,
     });
-    //写入日志表记录
+
+    // 8. 写入日志表记录
     db.vessel_logs.insert({
       action: 'analyze',
       user_id: req.user?.id || 0,
@@ -285,8 +314,9 @@ router.post('/analyze', async (req: AuthRequest, res) => {
       updated_at: now(),
       drawing_id: drawing.id,
       version: '1',
-      remark: "",
+      remark: '',
     });
+
     res.json(success(drawing, '图纸解析并入库成功'));
   } catch (error: any) {
     console.error('图纸解析失败:', error);
@@ -304,8 +334,10 @@ router.post('/update', async (req: AuthRequest, res) => {
     const textContent = await extractTextFromPDF(pdfPath);
     //调用DeepSeek API解析
     const parsedData = await analyzePDFWithDeepSeek(textContent, pdfPath);
-    console.log(parsedData, '参数列表');
-
+    //把CQG20/1.1 / 替换为-
+      if(parsedData.standard){
+        parsedData.standard = parsedData.standard.replace(/\//g, '-');
+      }
     // 更新数据库
     db.vessel_drawings.update((d) => d.id === id, { version, updated_at: now(), remark: parsedData.remark || null });
     //生成PDF预览图

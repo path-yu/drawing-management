@@ -120,11 +120,11 @@ input[type="range"]::-moz-range-thumb {
 }
 
 ::-webkit-scrollbar {
-  @apply w-5 h-5;
+  @apply w-1.5 h-1.5;
 }
 
 ::-webkit-scrollbar-track {
-  @apply bg-slate-100 dark:bg-slate-800;
+  @apply bg-transparent;
 }
 
 ::-webkit-scrollbar-thumb {

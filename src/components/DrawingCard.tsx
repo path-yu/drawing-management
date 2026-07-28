@@ -1,54 +1,48 @@
 import { useState } from 'react';
-import { Eye, FileText, Edit2, MoreHorizontal, Copy, Check, Trash2, CheckSquare, Square } from 'lucide-react';
+import { Eye, MoreHorizontal, Copy, Check, Trash2, CheckSquare, Square } from 'lucide-react';
 import { VesselDrawing } from '../types';
+import { PermissionGuard } from './PermissionGuard';
 
 interface DrawingCardProps {
   drawing: VesselDrawing;
   onPreview: (drawing: VesselDrawing) => void;
-  onExport: (drawing: VesselDrawing) => void;
-  onEdit: (drawing: VesselDrawing) => void;
   onDelete: (drawing: VesselDrawing) => void;
   selected?: boolean;
   onToggleSelect?: (drawing: VesselDrawing) => void;
   showCheckbox?: boolean;
 }
 
-export function DrawingCard({ drawing, onPreview, onExport, onEdit, onDelete, selected = false, onToggleSelect, showCheckbox = false }: DrawingCardProps) {
-  const [copied, setCopied] = useState(false);
+export function DrawingCard({ drawing, onPreview, onDelete, selected = false, onToggleSelect, showCheckbox = false }: DrawingCardProps) {
+  const [copiedCode, setCopiedCode] = useState(false);
 
-  const handleCopyLink = async () => {
-    const link = `${window.location.origin}/drawing/${drawing.id}`;
+
+
+  const handleCopyCode = async () => {
+    if (!drawing.material_code) return;
     try {
-      await navigator.clipboard.writeText(link);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      await navigator.clipboard.writeText(drawing.material_code);
+      setCopiedCode(true);
+      setTimeout(() => setCopiedCode(false), 2000);
     } catch {
       const textArea = document.createElement('textarea');
-      textArea.value = link;
+      textArea.value = drawing.material_code;
       document.body.appendChild(textArea);
       textArea.select();
       document.execCommand('copy');
       document.body.removeChild(textArea);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setCopiedCode(true);
+      setTimeout(() => setCopiedCode(false), 2000);
     }
   };
   return (
     <div className={`card overflow-hidden hover:shadow-md transition-shadow cursor-pointer ${selected ? 'ring-2 ring-primary-500' : ''}`} onClick={() => onPreview(drawing)}>
-      <div className={`relative bg-slate-100 dark:bg-slate-700 flex items-center justify-center overflow-hidden ${
-        drawing.structure_type === '立式' ? 'h-52' : 'h-40'
-      }`}>
-    
+      <div className="relative bg-slate-100 dark:bg-slate-700 flex items-center justify-center overflow-hidden">
         {/* PNG预览图覆盖在SVG上面 */}
         {drawing.preview_image && (
           <img
             src={`http://localhost:3000${drawing.preview_image}`}
             alt={drawing.file_name}
-            className={`max-w-full max-h-full ${
-              drawing.structure_type === '立式' 
-                ? 'w-auto h-full' 
-                : 'w-full h-auto'
-            }`}
+            className="w-full h-auto object-contain max-h-64"
             onError={(e) => {
               (e.target as HTMLImageElement).style.display = 'none';
             }}
@@ -78,8 +72,22 @@ export function DrawingCard({ drawing, onPreview, onExport, onEdit, onDelete, se
           <h3 className="font-semibold text-slate-800 text-sm truncate max-w-[200px] dark:text-slate-100" title={drawing.file_name}>
             {drawing.file_name}
           </h3>
-          <span className="badge badge-gray">当前版本：V_{drawing.version}</span>
+          <span className="badge badge-gray">V_{drawing.version}</span>
         </div>
+
+        {drawing.material_code && (
+          <div className="flex items-center gap-1.5 mb-3">
+            <span className="text-xs text-slate-500 dark:text-slate-400">物料编码:</span>
+            <button
+              onClick={(e) => { e.stopPropagation(); handleCopyCode(); }}
+              className="flex items-center gap-1 px-2 py-0.5 text-xs font-mono font-medium text-primary-600 bg-primary-50 rounded hover:bg-primary-100 transition-colors dark:text-primary-400 dark:bg-primary-900/20 dark:hover:bg-primary-900/40"
+              title={copiedCode ? '已复制' : '点击复制物料编码'}
+            >
+              {copiedCode ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+              {drawing.material_code}
+            </button>
+          </div>
+        )}
 
         <div className="flex flex-wrap gap-2 mb-4">
           <span className="badge bg-slate-100 text-slate-600 text-xs dark:bg-slate-700 dark:text-slate-300">
@@ -105,14 +113,14 @@ export function DrawingCard({ drawing, onPreview, onExport, onEdit, onDelete, se
             >
               <Eye className="w-4 h-4" />
             </button>
-            <button
+            {/* <button
               onClick={(e) => { e.stopPropagation(); onExport(drawing); }}
               className="p-2 text-slate-600 hover:bg-green-50 hover:text-green-600 rounded-lg transition-colors dark:text-slate-300 dark:hover:bg-green-900/30 dark:hover:text-green-400"
               title="导出客户 PDF"
             >
               <FileText className="w-4 h-4" />
-            </button>
-            <button
+            </button> */}
+            {/* <button
               onClick={(e) => { e.stopPropagation(); handleCopyLink(); }}
               className={`p-2 rounded-lg transition-colors ${
                 copied
@@ -122,21 +130,23 @@ export function DrawingCard({ drawing, onPreview, onExport, onEdit, onDelete, se
               title={copied ? '已复制' : '复制链接'}
             >
               {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-            </button>
-            <button
+            </button> */}
+            {/* <button
             onClick={(e) => { e.stopPropagation(); onEdit(drawing); }}
             className="p-2 text-slate-600 hover:bg-orange-50 hover:text-orange-600 rounded-lg transition-colors dark:text-slate-300 dark:hover:bg-orange-900/30 dark:hover:text-orange-400"
             title="编辑"
           >
             <Edit2 className="w-4 h-4" />
-          </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); onDelete(drawing); }}
-            className="p-2 text-slate-600 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors dark:text-slate-300 dark:hover:bg-red-900/30 dark:hover:text-red-400"
-            title="删除"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+          </button> */}
+            <PermissionGuard permission="drawing:delete">
+              <button
+                onClick={(e) => { e.stopPropagation(); onDelete(drawing); }}
+                className="p-2 text-slate-600 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors dark:text-slate-300 dark:hover:bg-red-900/30 dark:hover:text-red-400"
+                title="删除"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </PermissionGuard>
         </div>
           <button 
             onClick={(e) => e.stopPropagation()}

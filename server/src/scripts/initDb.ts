@@ -34,6 +34,7 @@ function initDatabase() {
       { name: '删除图纸', code: 'drawing:delete', description: '删除图纸', created_at: now() },
       { name: '导出PDF', code: 'drawing:export', description: '导出客户报价PDF(带水印)', created_at: now() },
       { name: '下载DWG', code: 'drawing:download', description: '下载DWG原图', created_at: now() },
+      { name: '下载预览图', code: 'drawing:downloadPreview', description: '下载图纸预览图片', created_at: now() },
       { name: '查看用户', code: 'user:view', description: '查看用户列表', created_at: now() },
       { name: '新增用户', code: 'user:create', description: '创建新用户', created_at: now() },
       { name: '编辑用户', code: 'user:edit', description: '修改用户信息', created_at: now() },
@@ -42,6 +43,8 @@ function initDatabase() {
       { name: '新增角色', code: 'role:create', description: '创建新角色', created_at: now() },
       { name: '编辑角色', code: 'role:edit', description: '修改角色和权限分配', created_at: now() },
       { name: '删除角色', code: 'role:delete', description: '删除角色', created_at: now() },
+      { name: '查看分享', code: 'share:view', description: '查看分享列表', created_at: now() },
+      { name: '管理分享', code: 'share:manage', description: '创建、编辑、删除分享链接', created_at: now() },
     ];
     for (const perm of permissions) {
       db.permissions.insert(perm);
@@ -54,10 +57,12 @@ function initDatabase() {
     const allPerms = db.permissions.all();
     const rolePermMap: Record<string, string[]> = {
       super_admin: allPerms.map((p) => p.code),
-      admin: ['drawing:view', 'drawing:create', 'drawing:edit', 'drawing:delete', 'drawing:export', 'drawing:download',
-              'user:view', 'user:create', 'user:edit', 'user:delete', 'role:view', 'role:edit'],
-      engineer: ['drawing:view', 'drawing:create', 'drawing:edit', 'drawing:export', 'drawing:download', 'user:view'],
-      sales: ['drawing:view', 'drawing:export', 'user:view'],
+      admin: ['drawing:view', 'drawing:create', 'drawing:edit', 'drawing:delete', 'drawing:export', 'drawing:download', 'drawing:downloadPreview',
+              'user:view', 'user:create', 'user:edit', 'user:delete', 'role:view', 'role:edit',
+              'share:view', 'share:manage'],
+      engineer: ['drawing:view', 'drawing:create', 'drawing:edit', 'drawing:export', 'drawing:download', 'drawing:downloadPreview', 'user:view',
+                 'share:view', 'share:manage'],
+      sales: ['drawing:view', 'drawing:export', 'user:view', 'share:view'],
       viewer: ['drawing:view'],
     };
 

@@ -7,6 +7,7 @@ import { RegisterPage } from './pages/RegisterPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { UserManagementPage } from './pages/UserManagementPage';
 import { RoleManagementPage } from './pages/RoleManagementPage';
+import { ShareManagementPage } from './pages/ShareManagementPage';
 import { ExternalShareView } from './pages/ExternalShareView';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
@@ -39,6 +40,14 @@ function App() {
               element={
                 <ProtectedRoute permission="role:manage">
                   <RoleManagementPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/shares"
+              element={
+                <ProtectedRoute permission="share:manage">
+                  <ShareManagementPage />
                 </ProtectedRoute>
               }
             />

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { ZoomIn, ZoomOut, Maximize2, Download, Copy, FileText, Layers, Ruler, ChevronLeft, ChevronRight, FileImage,Globe, Pencil } from 'lucide-react';
+import { ZoomIn, ZoomOut, Maximize2, Download, Copy, FileText, FileImage, Globe, Pencil } from 'lucide-react';
 import { VesselDrawing } from '../types';
 import { Modal } from './Modal';
 import { PDFPreview } from './PDFPreview';
@@ -7,6 +7,7 @@ import { api } from '../utils/api';
 import { downloadFile } from '@/utils/download';
 import { copyToClipboard } from '@/utils/clipboard';
 import { showToast } from './Toast';
+import { PermissionGuard } from './PermissionGuard';
 
 interface DrawingPreviewModalProps {
   drawing: VesselDrawing | null;
@@ -21,9 +22,12 @@ export function DrawingPreviewModal({ drawing, onClose, onDrawingUpdate }: Drawi
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [currentPreviewUrl, setCurrentPreviewUrl] = useState('');
   const [currentVersion, setCurrentVersion] = useState('1');
+  // 本地副本，用于编辑后实时更新显示
+  const [localDrawing, setLocalDrawing] = useState<VesselDrawing >(drawing!);
   useEffect(() => {
     setCurrentPreviewUrl(drawing?.preview_image || '');
     setCurrentVersion(drawing?.version || '1');
+    setLocalDrawing(drawing!);
   }, [drawing]);
 
   const safeNumber = (value: number | null | undefined, decimals: number = 0): string => {
@@ -136,7 +140,9 @@ export function DrawingPreviewModal({ drawing, onClose, onDrawingUpdate }: Drawi
       if (response.code === 200) {
         showToast('success', '保存成功');
         setShowEditFieldModal(false);
-        // 刷新数据
+        // 立即更新本地副本，实现页面实时更新
+        setLocalDrawing(prev => prev ? { ...prev, ...updateData } : prev);
+        // 同时通知父组件刷新列表
         if (onDrawingUpdate) {
           onDrawingUpdate();
         }
@@ -369,9 +375,9 @@ const handleDownload = (type: 'pdf' | 'dwg'|'preview' ) => {
       <div className="flex flex-col h-full">
         <div className="flex items-center justify-between px-5 py-3 bg-slate-50 border-b border-slate-200 dark:bg-slate-800 dark:border-slate-700">
           <div className="flex items-center gap-3">
-            <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">{drawing.file_name}</h2>
-            <span className="badge badge-primary">{drawing.material_code}</span>
-            <span className="badge badge-gray">当前版本：V_{drawing.version}</span>
+            <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">{localDrawing.file_name}</h2>
+            <span className="badge badge-primary">{localDrawing.material_code}</span>
+            <span className="badge badge-gray">当前版本：{localDrawing.version}</span>
           </div>
           <button
             onClick={onClose}
@@ -425,18 +431,18 @@ const handleDownload = (type: 'pdf' | 'dwg'|'preview' ) => {
                   <ZoomIn className="w-4 h-4 text-slate-600" />
                 </button>
                 <div className="w-px h-6 bg-slate-200 mx-2 dark:bg-slate-600" />
-                <button className="p-2 hover:bg-slate-100 rounded-lg transition-colors dark:text-slate-400 dark:hover:bg-slate-700" title="图层控制">
+                {/* <button className="p-2 hover:bg-slate-100 rounded-lg transition-colors dark:text-slate-400 dark:hover:bg-slate-700" title="图层控制">
                   <Layers className="w-4 h-4 text-slate-600" />
                 </button>
                 <button className="p-2 hover:bg-slate-100 rounded-lg transition-colors dark:text-slate-400 dark:hover:bg-slate-700" title="在线测量">
                   <Ruler className="w-4 h-4 text-slate-600" />
-                </button>
-                <button className="p-2 hover:bg-slate-100 rounded-lg transition-colors dark:text-slate-400 dark:hover:bg-slate-700" title="上一页">
+                </button> */}
+                {/* <button className="p-2 hover:bg-slate-100 rounded-lg transition-colors dark:text-slate-400 dark:hover:bg-slate-700" title="上一页">
                   <ChevronLeft className="w-4 h-4 text-slate-600" />
                 </button>
                 <button className="p-2 hover:bg-slate-100 rounded-lg transition-colors dark:text-slate-400 dark:hover:bg-slate-700" title="下一页">
                   <ChevronRight className="w-4 h-4 text-slate-600" />
-                </button>
+                </button> */}
               </div>
               <button
                 onClick={() => setIsFullscreen(!isFullscreen)}
@@ -474,16 +480,16 @@ const handleDownload = (type: 'pdf' | 'dwg'|'preview' ) => {
                     onDoubleClick={handleDoubleClick}
                     title="按住鼠标左键拖拽，双击重置位置"
                   >
-                    {drawing.preview_image ? (
+                    {localDrawing.preview_image ? (
                       <img
                         src={`http://localhost:3000${currentPreviewUrl}`}
-                        alt={drawing.file_name}
+                        alt={localDrawing.file_name}
                         className="border border-slate-300 rounded-lg bg-white shadow-sm pointer-events-none"
                         style={{ maxWidth: 'none', height: 'auto' }}
                       />
                     ) : (
                       <svg viewBox="0 0 400 500" fill="none" className="border border-slate-300 rounded-lg bg-white pointer-events-none">
-                        {drawing.structure_type === '立式' ? (
+                        {localDrawing.structure_type === '立式' ? (
                           <>
                             <rect x="50" y="30" width="300" height="440" rx="15" stroke="#1E293B" strokeWidth="3" fill="white" />
                             <rect x="70" y="50" width="260" height="400" rx="10" stroke="#64748B" strokeWidth="1.5" fill="none" />
@@ -503,7 +509,7 @@ const handleDownload = (type: 'pdf' | 'dwg'|'preview' ) => {
                             <rect x="360" y="350" width="30" height="40" rx="5" stroke="#EF4444" strokeWidth="2" fill="white" />
                             <text x="375" y="375" textAnchor="middle" fill="#EF4444" fontSize="9" fontWeight="bold">排污口</text>
                             <text x="200" y="20" textAnchor="middle" fill="#475569" fontSize="12" fontWeight="bold">
-                              {drawing.material_code} - {drawing.file_name}
+                              {localDrawing.material_code} - {localDrawing.file_name}
                             </text>
                           </>
                         ) : (
@@ -523,7 +529,7 @@ const handleDownload = (type: 'pdf' | 'dwg'|'preview' ) => {
                             <rect x="230" y="400" width="40" height="30" rx="5" stroke="#EF4444" strokeWidth="2" fill="white" />
                             <text x="250" y="422" textAnchor="middle" fill="#EF4444" fontSize="9" fontWeight="bold">排污口</text>
                             <text x="250" y="70" textAnchor="middle" fill="#475569" fontSize="12" fontWeight="bold">
-                              {drawing.material_code} - {drawing.file_name}
+                              {localDrawing.material_code} - {localDrawing.file_name}
                             </text>
                           </>
                         )}
@@ -562,105 +568,107 @@ const handleDownload = (type: 'pdf' | 'dwg'|'preview' ) => {
               {activeTab === 'params' && (
                 <div className="space-y-4">
                   <div className="flex items-center gap-2 mb-4">
-                    <span className={`badge ${drawing.structure_type === '立式' ? 'badge-primary' : 'badge-orange'}`}>
-                      {drawing.structure_type}
+                    <span className={`badge ${localDrawing.structure_type === '立式' ? 'badge-primary' : 'badge-orange'}`}>
+                      {localDrawing.structure_type}
                     </span>
-                    <span className="badge badge-gray">{drawing.material}</span>
-                    {drawing.material_code && (
-                      <div className="flex items-center gap-1 ml-auto">
+                    <span className="badge badge-gray">{localDrawing.material}</span>
+                     <div className="flex items-center gap-1 ml-auto">
                         <span className="text-xs text-slate-500 dark:text-slate-400">物料编码:</span>
-                        <span className="text-sm font-mono font-medium text-primary-600 dark:text-primary-400">{drawing.material_code}</span>
-                        <button
-                          onClick={() => {
-                            setEditingField('material_code');
-                            setEditFieldValue(drawing.material_code || '');
-                            setShowEditFieldModal(true);
-                          }}
-                          className="p-1 hover:bg-slate-200 dark:hover:bg-slate-600 rounded transition-colors"
-                          title="编辑物料编码"
-                        >
-                          <Pencil className="w-3 h-3 text-slate-500" />
-                        </button>
+                        <span className="text-sm font-mono font-medium text-primary-600 dark:text-primary-400">{localDrawing.material_code}</span>
+                        <PermissionGuard permission="drawing:edit">
+                          <button
+                            onClick={() => {
+                              setEditingField('material_code');
+                              setEditFieldValue(localDrawing.material_code || '');
+                              setShowEditFieldModal(true);
+                            }}
+                            className="p-1 hover:bg-slate-200 dark:hover:bg-slate-600 rounded transition-colors"
+                            title="编辑物料编码"
+                          >
+                            <Pencil className="w-3 h-3 text-slate-500" />
+                          </button>
+                        </PermissionGuard>
                       </div>
-                    )}
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
                     <div className="bg-slate-50 rounded-lg p-3 dark:bg-slate-700">
                       <p className="text-xs text-slate-500 mb-1 dark:text-slate-400">工作压力</p>
-                      <p className="text-lg font-semibold text-slate-800 dark:text-slate-100">{safeNumber(drawing.working_pressure, 2)} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">MPa</span></p>
+                      <p className="text-lg font-semibold text-slate-800 dark:text-slate-100">{safeNumber(localDrawing.working_pressure, 2)} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">MPa</span></p>
                     </div>
                     <div className="bg-slate-50 rounded-lg p-3 dark:bg-slate-700">
                       <p className="text-xs text-slate-500 mb-1 dark:text-slate-400">设计压力</p>
-                      <p className="text-lg font-semibold text-slate-800 dark:text-slate-100">{safeNumber(drawing.design_pressure, 2)} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">MPa</span></p>
+                      <p className="text-lg font-semibold text-slate-800 dark:text-slate-100">{safeNumber(localDrawing.design_pressure, 2)} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">MPa</span></p>
                     </div>
                     <div className="bg-slate-50 rounded-lg p-3 dark:bg-slate-700">
                       <p className="text-xs text-slate-500 mb-1 dark:text-slate-400">设计温度</p>
-                      <p className="text-lg font-semibold text-slate-800 dark:text-slate-100">{safeNumber(drawing.design_temperature)} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">℃</span></p>
+                      <p className="text-lg font-semibold text-slate-800 dark:text-slate-100">{safeNumber(localDrawing?.design_temperature)} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">℃</span></p>
                     </div>
                     <div className="bg-slate-50 rounded-lg p-3 dark:bg-slate-700">
                       <p className="text-xs text-slate-500 mb-1 dark:text-slate-400">容积</p>
-                      <p className="text-lg font-semibold text-slate-800 dark:text-slate-100">{safeNumber(drawing.volume, 2)} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">m³</span></p>
+                      <p className="text-lg font-semibold text-slate-800 dark:text-slate-100">{safeNumber(localDrawing.volume, 2)} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">m³</span></p>
                     </div>
                     <div className="bg-slate-50 rounded-lg p-3 dark:bg-slate-700">
                       <p className="text-xs text-slate-500 mb-1 dark:text-slate-400">公称直径</p>
-                      <p className="text-lg font-semibold text-slate-800 dark:text-slate-100">{safeNumber(drawing.nominal_diameter)} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">mm</span></p>
+                      <p className="text-lg font-semibold text-slate-800 dark:text-slate-100">{safeNumber(localDrawing.nominal_diameter)} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">mm</span></p>
                     </div>
                     <div className="bg-slate-50 rounded-lg p-3 dark:bg-slate-700">
                       <p className="text-xs text-slate-500 mb-1 dark:text-slate-400">壁厚</p>
-                      <p className="text-lg font-semibold text-slate-800 dark:text-slate-100">{safeNumber(drawing.wall_thickness, 1)} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">mm</span></p>
+                      <p className="text-lg font-semibold text-slate-800 dark:text-slate-100">{safeNumber(localDrawing.wall_thickness, 1)} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">mm</span></p>
                     </div>
                     <div className="bg-slate-50 rounded-lg p-3 dark:bg-slate-700">
                       <p className="text-xs text-slate-500 mb-1 dark:text-slate-400">设备总高/总长</p>
-                      <p className="text-lg font-semibold text-slate-800 dark:text-slate-100">{safeNumber(drawing.total_height_or_length)} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">mm</span></p>
+                      <p className="text-lg font-semibold text-slate-800 dark:text-slate-100">{safeNumber(localDrawing.total_height_or_length)} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">mm</span></p>
                     </div>
                     <div className="bg-slate-50 rounded-lg p-3 dark:bg-slate-700">
                       <p className="text-xs text-slate-500 mb-1 dark:text-slate-400">重量</p>
-                      <p className="text-lg font-semibold text-slate-800 dark:text-slate-100">{safeLocaleNumber(drawing.weight)} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">kg</span></p>
+                      <p className="text-lg font-semibold text-slate-800 dark:text-slate-100">{safeLocaleNumber(localDrawing.weight)} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">kg</span></p>
                     </div>
                   </div>
 
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
                       <span className="text-slate-500 dark:text-slate-400">介质</span>
-                      <span className="text-slate-800 font-medium dark:text-slate-100">{drawing.medium}</span>
+                      <span className="text-slate-800 font-medium dark:text-slate-100">{localDrawing.medium}</span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-slate-500 dark:text-slate-400">设计使用年限</span>
-                      <span className="text-slate-800 font-medium dark:text-slate-100">{safeNumber(drawing.design_life)} 年</span>
+                      <span className="text-slate-800 font-medium dark:text-slate-100">{safeNumber(localDrawing.design_life)} 年</span>
                     </div>
-                    <div className="flex justify-between text-sm">
+                    {/* <div className="flex justify-between text-sm">
                       <span className="text-slate-500 dark:text-slate-400">创建人</span>
-                      <span className="text-slate-800 font-medium dark:text-slate-100">{drawing.created_by}</span>
+                      <span className="text-slate-800 font-medium dark:text-slate-100">{localDrawing.created_by}</span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-slate-500 dark:text-slate-400">修改人</span>
-                      <span className="text-slate-800 font-medium dark:text-slate-100">{drawing.updated_by}</span>
-                    </div>
+                      <span className="text-slate-800 font-medium dark:text-slate-100">{localDrawing.updated_by}</span>
+                    </div> */}
                     <div className="flex justify-between text-sm">
                       <span className="text-slate-500 dark:text-slate-400">创建时间</span>
-                      <span className="text-slate-800 font-medium dark:text-slate-100">{drawing.created_at ? new Date(drawing.created_at).toLocaleString('zh-CN') : '-'}</span>
+                      <span className="text-slate-800 font-medium dark:text-slate-100">{localDrawing.created_at ? new Date(localDrawing.created_at).toLocaleString('zh-CN') : '-'}</span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-slate-500 dark:text-slate-400">更新时间</span>
-                      <span className="text-slate-800 font-medium dark:text-slate-100">{drawing.updated_at ? new Date(drawing.updated_at).toLocaleString('zh-CN') : '-'}</span>
+                      <span className="text-slate-800 font-medium dark:text-slate-100">{localDrawing.updated_at ? new Date(localDrawing.updated_at).toLocaleString('zh-CN') : '-'}</span>
                     </div>
                   </div>
 
                   <div className="mt-4">
                     <div className="flex items-center justify-between mb-1">
                       <p className="text-xs text-slate-500 dark:text-slate-400">备注</p>
-                      <button
-                        onClick={() => {
-                          setEditingField('remark');
-                          setEditFieldValue(drawing.remark || '');
-                          setShowEditFieldModal(true);
-                        }}
-                        className="flex items-center gap-1 text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 transition-colors"
-                      >
-                        <Pencil className="w-3 h-3" />
-                        编辑
-                      </button>
+                      <PermissionGuard permission="drawing:edit">
+                        <button
+                          onClick={() => {
+                            setEditingField('remark');
+                            setEditFieldValue(localDrawing.remark || '');
+                            setShowEditFieldModal(true);
+                          }}
+                          className="flex items-center gap-1 text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 transition-colors"
+                        >
+                          <Pencil className="w-3 h-3" />
+                          编辑
+                        </button>
+                      </PermissionGuard>
                     </div>
                     {drawing.remark ? (
                       <p className="text-sm text-slate-700 bg-slate-50 rounded-lg p-3 dark:text-slate-300 dark:bg-slate-700">{drawing.remark}</p>
@@ -768,30 +776,39 @@ const handleDownload = (type: 'pdf' | 'dwg'|'preview' ) => {
 
         <div className="flex items-center justify-between px-5 py-3 bg-slate-50 border-t border-slate-200 dark:bg-slate-800 dark:border-slate-700">
           <div className="flex items-center gap-3">
-            <button onClick={()=>handleDownload('pdf')} className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors text-sm font-medium">
-              <Download className="w-4 h-4" />
-              下载pdf
-            </button>
-            <button onClick={()=>handleDownload('dwg')} className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors text-sm font-medium dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600">
-              <Download className="w-4 h-4" />
-              下载 DWG 原图
-            </button>
-             <button onClick={()=>handleDownload('preview')} className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors text-sm font-medium dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600">
-              <Download className="w-4 h-4" />
-              下载预览图片
-            </button>
-            <button onClick={handleCopyInternalLink} className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors text-sm font-medium dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600">
-              <Copy className="w-4 h-4" />
-              复制内部链接
-            </button>
-            {/* 复制外部分享链接 */}
-             <button onClick={() => { setShowShareModal(true); setShareUrl(''); setSharePasscode(''); }} className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors text-sm font-medium dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600">
-              <Globe className="w-4 h-4" />
-              复制外部分享链接
-            </button>
+            <PermissionGuard permission="drawing:export">
+              <button onClick={()=>handleDownload('pdf')} className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors text-sm font-medium">
+                <Download className="w-4 h-4" />
+                下载pdf
+              </button>
+            </PermissionGuard>
+            <PermissionGuard permission="drawing:download">
+              <button onClick={()=>handleDownload('dwg')} className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors text-sm font-medium dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600">
+                <Download className="w-4 h-4" />
+                下载 DWG 原图
+              </button>
+            </PermissionGuard>
+             <PermissionGuard permission="drawing:downloadPreview">
+              <button onClick={()=>handleDownload('preview')} className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors text-sm font-medium dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600">
+                <Download className="w-4 h-4" />
+                下载预览图片
+              </button>
+            </PermissionGuard>
+            <PermissionGuard permission="share:view">
+              <button onClick={handleCopyInternalLink} className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors text-sm font-medium dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600">
+                <Copy className="w-4 h-4" />
+                复制内部链接
+              </button>
+            </PermissionGuard>
+            <PermissionGuard permission="share:manage">
+              <button onClick={() => { setShowShareModal(true); setShareUrl(''); setSharePasscode(''); }} className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors text-sm font-medium dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600">
+                <Globe className="w-4 h-4" />
+                复制外部分享链接
+              </button>
+            </PermissionGuard>
           </div>
           <div className="text-xs text-slate-500 dark:text-slate-400">
-            文件路径: {drawing.file_path}
+            文件路径: {drawing.dwg_file_path}
           </div>
         </div>
 

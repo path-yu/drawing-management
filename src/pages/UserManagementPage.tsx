@@ -422,7 +422,7 @@ export function UserManagementPage() {
                 type="password"
                 value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
-                placeholder="不少于6位"
+                placeholder={editingUser ? '•••••• (留空则不修改)' : '不少于6位'}
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
               />
             </div>

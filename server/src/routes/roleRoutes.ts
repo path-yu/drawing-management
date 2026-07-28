@@ -1,21 +1,28 @@
-import { Router } from 'express';
+import { Router, IRouter } from 'express';
 import { db } from '../database/db';
 import { AuthRequest } from '../types';
 import { success, fail } from '../utils/response';
 import { authMiddleware, requirePermission } from '../middleware/auth';
 
-const router = Router();
+const router: IRouter = Router();
 const now = () => new Date().toISOString();
 
 /**
  * GET /api/v1/roles - 获取角色列表
  */
 router.get('/', authMiddleware, requirePermission('role:view'), (req: AuthRequest, res) => {
-  const roles = db.roles.all().map((r) => ({
-    ...r,
-    permission_count: db.role_permissions.count((rp) => rp.role_id === r.id),
-    user_count: db.users.count((u) => u.role_id === r.id),
-  }));
+  const roles = db.roles.all().map((r) => {
+    const rpList = db.role_permissions.find((rp) => rp.role_id === r.id);
+    const permissions = rpList
+      .map((rp) => db.permissions.get((p) => p.id === rp.permission_id))
+      .filter(Boolean);
+    return {
+      ...r,
+      permission_count: permissions.length,
+      user_count: db.users.count((u) => u.role_id === r.id),
+      permissions,
+    };
+  });
   res.json(success(roles));
 });
 

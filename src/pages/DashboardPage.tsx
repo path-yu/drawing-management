@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { LayoutGrid, List, SplitSquareVertical, X, Trash2, CheckSquare, Square, AlertTriangle, RefreshCw, Search, Maximize2 } from 'lucide-react';
 import { Header } from '../components/Header';
@@ -6,6 +6,7 @@ import { FilterSidebar } from '../components/FilterSidebar';
 import { DrawingCard } from '../components/DrawingCard';
 import { DataTable } from '../components/DataTable';
 import { DrawingPreviewModal } from '../components/DrawingPreviewModal';
+import { PermissionGuard } from '../components/PermissionGuard';
 import { VesselDrawing, FilterState, ViewMode } from '../types';
 import { api } from '../utils/api';
 
@@ -57,6 +58,8 @@ export function DashboardPage() {
   const [deleteTarget, setDeleteTarget] = useState<'single' | 'batch'>('single');
   const [deleteDrawing, setDeleteDrawing] = useState<VesselDrawing | null>(null);
   const [splitSelectedDrawing, setSplitSelectedDrawing] = useState<VesselDrawing | null>(null);
+  // 记录用户是否手动关闭了内部分享的预览弹窗
+  const sharePreviewClosedRef = useRef(false);
 
   useEffect(() => {
     fetchDrawings();
@@ -93,11 +96,12 @@ export function DashboardPage() {
 
   // 内部分享链接：识别 URL 中的 id，自动拉取并选中该图纸，开启预览 Modal
   useEffect(() => {
-    
     if (!shareId || loading || filteredDrawings.length === 0) return;
-    const target = filteredDrawings.find((d) => d.id === shareId);
-    console.log(filteredDrawings);
     
+    // 如果用户已手动关闭预览，不再自动打开
+    if (sharePreviewClosedRef.current) return;
+    
+    const target = filteredDrawings.find((d) => String(d.id) === shareId);
     if (target) {
       setPreviewDrawing(target);
     }
@@ -308,30 +312,32 @@ export function DashboardPage() {
             </div>
 
             <div className="flex items-center gap-4">
-              {selectedIds.size > 0 && (
-                <button
-                  onClick={handleBatchDelete}
-                  className="flex items-center gap-2 px-3 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm font-medium"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  删除选中 ({selectedIds.size})
-                </button>
-              )}
-              <button
-                onClick={handleSelectAll}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm font-medium ${
-                  selectedIds.size === filteredDrawings.length && filteredDrawings.length > 0
-                    ? 'bg-primary-500 text-white hover:bg-primary-600'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600'
-                }`}
-              >
-                {selectedIds.size === filteredDrawings.length && filteredDrawings.length > 0 ? (
-                  <CheckSquare className="w-4 h-4" />
-                ) : (
-                  <Square className="w-4 h-4" />
+              <PermissionGuard permission="drawing:delete">
+                {selectedIds.size > 0 && (
+                  <button
+                    onClick={handleBatchDelete}
+                    className="flex items-center gap-2 px-3 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm font-medium"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    删除选中 ({selectedIds.size})
+                  </button>
                 )}
-                全选
-              </button>
+                <button
+                  onClick={handleSelectAll}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm font-medium ${
+                    selectedIds.size === filteredDrawings.length && filteredDrawings.length > 0
+                      ? 'bg-primary-500 text-white hover:bg-primary-600'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600'
+                  }`}
+                >
+                  {selectedIds.size === filteredDrawings.length && filteredDrawings.length > 0 ? (
+                    <CheckSquare className="w-4 h-4" />
+                  ) : (
+                    <Square className="w-4 h-4" />
+                  )}
+                  全选
+                </button>
+              </PermissionGuard>
               <select className="input-field text-sm w-40">
                 <option>按更新时间排序</option>
                 <option>按容积排序</option>
@@ -354,19 +360,18 @@ export function DashboardPage() {
             ) : (
               <>
                 {viewMode === 'card' && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  <div className="columns-1 sm:columns-2 lg:columns-3 xl:columns-4 gap-4 [column-fill:_balance]">
                     {filteredDrawings.map((drawing) => (
-                      <DrawingCard
-                        key={drawing.id}
-                        drawing={drawing}
-                        onPreview={handlePreview}
-                        onExport={handleExport}
-                        onEdit={handleEdit}
-                        onDelete={handleDelete}
-                        selected={selectedIds.has(drawing.id)}
-                        onToggleSelect={handleToggleSelect}
-                        showCheckbox={selectedIds.size > 0}
-                      />
+                      <div key={drawing.id} className="break-inside-avoid mb-4">
+                        <DrawingCard
+                          drawing={drawing}
+                          onPreview={handlePreview}
+                          onDelete={handleDelete}
+                          selected={selectedIds.has(drawing.id)}
+                          onToggleSelect={handleToggleSelect}
+                          showCheckbox={selectedIds.size > 0}
+                        />
+                      </div>
                     ))}
                   </div>
                 )}
@@ -588,7 +593,13 @@ export function DashboardPage() {
       {previewDrawing && (
         <DrawingPreviewModal
           drawing={previewDrawing}
-          onClose={() => setPreviewDrawing(null)}
+          onClose={() => {
+            setPreviewDrawing(null);
+            // 如果是内部分享链接，标记用户已手动关闭预览
+            if (shareId) {
+              sharePreviewClosedRef.current = true;
+            }
+          }}
           onDrawingUpdate={fetchDrawings}
         />
       )}
