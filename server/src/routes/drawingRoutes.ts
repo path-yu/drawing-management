@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import fs from 'fs-extra';
 import path from 'path';
+import { PDFDocument } from 'pdf-lib';
 import { db } from '../database/db';
 import { AuthRequest } from '../types';
 import { success, fail } from '../utils/response';
@@ -23,21 +24,42 @@ router.get('/search', authMiddleware, requirePermission('drawing:view'), (req: A
   // 关键词搜索
   if (q.keyword) {
     const kw = (q.keyword as string).toLowerCase();
-    list = list.filter((d) =>
-      d.material_code.toLowerCase().includes(kw) ||
-      d.file_name.toLowerCase().includes(kw) ||
-      (d.remark || '').toLowerCase().includes(kw)
-    );
+    list = list.filter((d) => {
+      // 安全地检查每个字段，处理null/undefined值
+      const materialCode = (d.material_code || '').toLowerCase();
+      const fileName = (d.file_name || '').toLowerCase();
+      const remark = (d.remark || '').toLowerCase();
+      const standard = (d.standard || '').toLowerCase();
+      return materialCode.includes(kw) ||
+        fileName.includes(kw) ||
+        remark.includes(kw) ||
+        standard.includes(kw);
+    });
   }
 
   // 精确匹配
   if (q.structure_type) list = list.filter((d) => d.structure_type === q.structure_type);
   if (q.material) list = list.filter((d) => d.material === q.material);
+  if (q.flow_direction) list = list.filter((d) => d.flow_direction === q.flow_direction);
+  if (q.is_simple !== undefined && q.is_simple !== '') list = list.filter((d) => (d.is_simple || false) === (q.is_simple === 'true'));
+
+  // 材质类别过滤
+  if (q.material_category) {
+    const carbonMaterials = ['Q235B', 'Q245R', 'Q345R'];
+    const stainlessMaterials = ['S30408', 'S30403', 'S31608', 'S31603'];
+    if (q.material_category === 'carbon') {
+      list = list.filter((d) => carbonMaterials.includes(d.material));
+    } else if (q.material_category === 'stainless') {
+      list = list.filter((d) => stainlessMaterials.includes(d.material));
+    }
+  }
+
   if (q.inlet_count) list = list.filter((d) => d.inlet_count === parseInt(q.inlet_count as string, 10));
   if (q.outlet_count) list = list.filter((d) => d.outlet_count === parseInt(q.outlet_count as string, 10));
 
   // 模糊匹配
-  if (q.medium) list = list.filter((d) => d.medium.includes(q.medium as string));
+  if (q.medium) list = list.filter((d) => (d.medium || '').includes(q.medium as string));
+  if (q.remark) list = list.filter((d) => (d.remark || '').toLowerCase().includes((q.remark as string).toLowerCase()));
   if (q.safety_valve_connection) list = list.filter((d) => (d.safety_valve_connection || '').includes(q.safety_valve_connection as string));
   if (q.drain_connection) list = list.filter((d) => (d.drain_connection || '').includes(q.drain_connection as string));
   if (q.inlet_connection) list = list.filter((d) => (d.inlet_connection || '').includes(q.inlet_connection as string));
@@ -132,6 +154,7 @@ router.post('/', authMiddleware, requirePermission('drawing:create'), (req: Auth
     created_at: now(),
     updated_at: now(),
     flow_direction: isHorizontal ? null : b.flow_direction || '右进左出',
+    is_simple: b.is_simple || false,
   });
 
   res.json(success(drawing, '图纸创建成功'));
@@ -181,6 +204,72 @@ router.delete('/batch', authMiddleware, requirePermission('drawing:delete'), (re
 });
 
 /**
+ * POST /api/v1/drawings/batch-merge-pdf - 批量合并PDF并下载
+ */
+router.post('/batch-merge-pdf', authMiddleware, requirePermission('drawing:export'), async (req: AuthRequest, res) => {
+  const { ids } = req.body;
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json(fail('缺少必填字段: ids（非空数组）'));
+  }
+
+  try {
+    // 创建新的PDF文档
+    const mergedPdf = await PDFDocument.create();
+    const uploadsDir = path.join(__dirname, '../../uploads');
+    
+    let successCount = 0;
+    
+    // 按顺序合并每个PDF
+    for (const id of ids) {
+      const drawing = db.vessel_drawings.get((d) => d.id === id && d.is_deleted === 0);
+      if (!drawing || !drawing.pdf_file_path) {
+        continue;
+      }
+
+      // 构建PDF文件的绝对路径
+      const relativePath = drawing.pdf_file_path.startsWith('/') ? drawing.pdf_file_path.slice(1) : drawing.pdf_file_path;
+      const pdfPath = path.join(uploadsDir, relativePath);
+
+      try {
+        if (await fs.pathExists(pdfPath)) {
+          const pdfBytes = await fs.readFile(pdfPath);
+          const pdf = await PDFDocument.load(pdfBytes);
+          const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
+          copiedPages.forEach((page) => {
+            mergedPdf.addPage(page);
+          });
+          successCount++;
+        }
+      } catch (err) {
+        console.error(`合并文件 ${drawing.file_name} 失败:`, err);
+      }
+    }
+
+    if (successCount === 0) {
+      return res.status(400).json(fail('没有可合并的PDF文件'));
+    }
+
+    // 保存合并后的PDF
+    const mergedPdfBytes = await mergedPdf.save();
+    
+    // 生成文件名
+    const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const filename = `合并图纸_${timestamp}_${successCount}个文件.pdf`;
+    
+    // 设置响应头
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
+    
+    // 发送PDF文件
+    res.send(Buffer.from(mergedPdfBytes));
+
+  } catch (error: any) {
+    console.error('批量合并PDF失败:', error);
+    res.status(500).json(fail(`合并失败: ${error.message}`));
+  }
+});
+
+/**
  * DELETE /api/v1/drawings/:id - 删除图纸（软删除）
  */
 router.delete('/:id', authMiddleware, requirePermission('drawing:delete'), (req: AuthRequest, res) => {
@@ -225,40 +314,41 @@ router.post('/analyze', async (req: AuthRequest, res) => {
     // 3. 确定最终保存在服务器的文件名 (pdfFileName)
     let finalPdfFileName: string;
     const originalFileName = path.basename(pdfPath);
-
+    
+      // 包含多个图纸：按规格重命名
     if (isMultiDrawing) {
-      // 包含多个图纸：按 "容积-设计压力.pdf" 格式重命名
-      const volume = parsedData.volume || 0;
-      const design_pressure = parsedData.design_pressure || 0;
-      //把CQG20/1.1 / 替换为-
-      if(parsedData.standard){
+      if (parsedData.standard) {
         parsedData.standard = parsedData.standard.replace(/\//g, '-');
+        finalPdfFileName = `${parsedData.standard}.pdf`;
+      } else {
+        finalPdfFileName = originalFileName;
       }
-      finalPdfFileName = parsedData.standard || originalFileName;
 
       // 冲突检测：如果文件名已存在，增加时间戳防止覆盖
       const targetCheckPath = path.join(pdfDir, finalPdfFileName);
       if (fs.existsSync(targetCheckPath)) {
+        const volume = parsedData.volume || 0;
+        const design_pressure = parsedData.design_pressure || 0;
         console.log('文件名已存在，追加时间戳区分');
         finalPdfFileName = `${Date.now()}_${volume}-${design_pressure}.pdf`;
-      }else{
-        finalPdfFileName = `${parsedData.standard}.pdf`;
+      }
+
+      // 4. 移动/转存文件到 uploads/pdf 目录 (兼容跨网络驱动器/跨盘符移动)
+      const destPdfPath = path.join(pdfDir, finalPdfFileName);
+
+      // 源路径和目标路径相同时跳过移动（文件已在目标目录）
+      if (path.resolve(pdfPath) !== path.resolve(destPdfPath)) {
+        fs.moveSync(pdfPath, destPdfPath, { overwrite: true });
       }
     } else {
-      // 单张图纸：增加物料编码和时间戳防止同名覆盖
-      finalPdfFileName = `${originalFileName}.pdf`;
+      // 单张图纸：使用原始文件名
+      finalPdfFileName = originalFileName;
     }
 
-    // 4. 移动/转存文件到 uploads/pdf 目录 (兼容跨网络驱动器/跨盘符移动)
-    const destPdfPath = path.join(pdfDir, finalPdfFileName);
-
-    // 使用 fs-extra 的 moveSync，自动处理 EXDEV 跨盘符问题（先复制后删除原文件）
-    fs.moveSync(pdfPath, destPdfPath, { overwrite: true });
-
     // 更新变量供后续预览生成和数据库存储使用
-    pdfPath = destPdfPath; // 此时 pdfPath 指向本地 uploads/pdf 里的绝对路径
     const pdfFilePath = `/uploads/pdf/${finalPdfFileName}`; // 数据库存储的相对 URL 路径
     file_name = finalPdfFileName.replace(/\.pdf$/i, ''); // 剔除后缀作为 file_name
+    console.log(pdfPath);
 
     // 5. 生成 PDF 预览图
     const previewImage = await generatePDFPreview(pdfPath, parsedData.version || '1');
@@ -302,7 +392,7 @@ router.post('/analyze', async (req: AuthRequest, res) => {
       updated_at: now(),
       standard: parsedData.standard || null,
       flow_direction: parsedData.flow_direction || '右进左出',
-      dwg_download_url: 'http://localhost:3000/uploads/dwg/' + originalFileName,
+      dwg_download_url: 'http://localhost:3000/uploads/dwg/' + originalFileName.replace('pdf','dwg'),
     });
 
     // 8. 写入日志表记录
@@ -335,9 +425,9 @@ router.post('/update', async (req: AuthRequest, res) => {
     //调用DeepSeek API解析
     const parsedData = await analyzePDFWithDeepSeek(textContent, pdfPath);
     //把CQG20/1.1 / 替换为-
-      if(parsedData.standard){
-        parsedData.standard = parsedData.standard.replace(/\//g, '-');
-      }
+    if (parsedData.standard) {
+      parsedData.standard = parsedData.standard.replace(/\//g, '-');
+    }
     // 更新数据库
     db.vessel_drawings.update((d) => d.id === id, { version, updated_at: now(), remark: parsedData.remark || null });
     //生成PDF预览图

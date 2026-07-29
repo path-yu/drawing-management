@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { ChevronDown, RotateCcw, SlidersHorizontal, X } from 'lucide-react';
 import { FilterState } from '../types';
-import { materialOptions, mediumOptions, connectionOptions } from '../data/mockData';
+import { materialOptions, materialCategoryMap, mediumOptions, connectionOptions } from '../data/mockData';
+import { ClearableInput } from './ClearableInput';
 
 interface FilterSidebarProps {
   filter: FilterState;
@@ -23,9 +24,9 @@ export function FilterSidebar({
   resultCount,
 }: FilterSidebarProps) {
   const [expandedSections, setExpandedSections] = useState({
-    process: false,
-    geometry: false,
-    connection: false,
+    process: true,
+    geometry: true,
+    connection: true,
   });
 
   const toggleSection = (section: keyof typeof expandedSections) => {
@@ -36,75 +37,187 @@ export function FilterSidebar({
     onFilterChange({ ...filter, [key]: value });
   };
 
+  // 点击材质快捷按钮：选中类别，清空具体材质
+  const handleMaterialCategoryChange = (category: '' | 'carbon' | 'stainless') => {
+    onFilterChange({ ...filter, material_category: category, material: '' });
+  };
+
+  // 选择具体材质：自动识别所属类别并同步
+  const handleMaterialChange = (material: string) => {
+    const category = material ? (materialCategoryMap[material] || '') : '';
+    onFilterChange({ ...filter, material, material_category: category as '' | 'carbon' | 'stainless' });
+  };
+
+  // 结构形式按钮样式
+  const structBtnClass = (active: boolean) =>
+    `flex-1 py-1.5 text-xs rounded-md transition-colors font-medium ${
+      active
+        ? 'bg-primary-600 text-white'
+        : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600'
+    }`;
+
   if (isCollapsed) {
     return (
-      <div className="w-12 bg-white border-r border-slate-200 flex flex-col items-center py-4 gap-2 dark:bg-slate-800 dark:border-slate-700">
+      <div className="w-12 flex-shrink-0 bg-white border-r border-slate-200 flex flex-col items-center py-3 gap-1 dark:bg-slate-800 dark:border-slate-700">
         <button
           onClick={onToggleCollapse}
-          className="p-2 hover:bg-slate-100 rounded-lg transition-colors dark:text-slate-300 dark:hover:bg-slate-700"
+          className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors dark:text-slate-300 dark:hover:bg-slate-700"
           title="展开筛选面板"
         >
-          <SlidersHorizontal className="w-5 h-5 text-slate-600" />
+          <SlidersHorizontal className="w-4 h-4 text-slate-600" />
         </button>
       </div>
     );
   }
 
   return (
-    <aside className="w-120 bg-white border-r border-slate-200 flex flex-col dark:bg-slate-800 dark:border-slate-700">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-700">
-        <h2 className="font-semibold text-slate-800 flex items-center gap-2 dark:text-slate-100">
-          <SlidersHorizontal className="w-4 h-4" />
+    <aside className="w-72 flex-shrink-0 bg-white border-r border-slate-200 flex flex-col dark:bg-slate-800 dark:border-slate-700">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-slate-200 dark:border-slate-700">
+        <h2 className="font-semibold text-sm text-slate-800 flex items-center gap-1.5 dark:text-slate-100">
+          <SlidersHorizontal className="w-3.5 h-3.5" />
           参数筛选
         </h2>
         <button
           onClick={onToggleCollapse}
-          className="p-1 hover:bg-slate-100 rounded transition-colors dark:text-slate-400 dark:hover:bg-slate-700"
+          className="p-0.5 hover:bg-slate-100 rounded transition-colors dark:text-slate-400 dark:hover:bg-slate-700"
           title="收起筛选面板"
         >
-          <X className="w-4 h-4 text-slate-500" />
+          <X className="w-3.5 h-3.5 text-slate-500" />
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 scrollbar-hide">
-        <div className="mb-5">
-          <label className="block text-sm font-medium text-slate-700 mb-2 dark:text-slate-300">结构形式</label>
-          <div className="flex gap-2">
-            {['', '立式', '卧式'].map((type) => (
-              <button
-                key={type}
-                onClick={() => handleChange('structure_type', type as '' | '立式' | '卧式')}
-                className={`flex-1 py-2 text-sm rounded-lg transition-colors ${
-                  filter.structure_type === type
-                    ? 'bg-primary-600 text-white'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600'
-                }`}
-              >
-                {type || '全部'}
-              </button>
-            ))}
+      <div className="flex-1 overflow-y-auto px-3 py-2.5 space-y-3 scrollbar-hide">
+        {/* 结构形式 */}
+        <div>
+          <label className="block text-xs font-medium text-slate-700 mb-1 dark:text-slate-300">结构形式</label>
+          <div className="flex gap-1.5">
+            <button
+              onClick={() => handleChange('structure_type', '')}
+              className={structBtnClass(filter.structure_type === '')}
+            >
+              全部
+            </button>
+            <button
+              onClick={() => handleChange('structure_type', '立式')}
+              className={structBtnClass(filter.structure_type === '立式')}
+            >
+              立式
+            </button>
+            <button
+              onClick={() => handleChange('structure_type', '卧式')}
+              className={structBtnClass(filter.structure_type === '卧式')}
+            >
+              卧式
+            </button>
           </div>
         </div>
 
-        <div className="mb-5">
-          <label className="block text-sm font-medium text-slate-700 mb-2 dark:text-slate-300">容积 (m³)</label>
-          <div className="flex items-center gap-2">
-            <input
+        {/* 容器规范 */}
+        <div>
+          <label className="block text-xs font-medium text-slate-700 mb-1 dark:text-slate-300">容器规范</label>
+          <div className="flex gap-1.5">
+            <button
+              onClick={() => handleChange('is_simple', '')}
+              className={structBtnClass(filter.is_simple === '')}
+            >
+              全部
+            </button>
+            <button
+              onClick={() => handleChange('is_simple', 'false')}
+              className={structBtnClass(filter.is_simple === 'false')}
+            >
+              固规
+            </button>
+            <button
+              onClick={() => handleChange('is_simple', 'true')}
+              className={structBtnClass(filter.is_simple === 'true')}
+            >
+              简规
+            </button>
+          </div>
+        </div>
+
+        {/* 材质快捷按钮 */}
+        <div>
+          <label className="block text-xs font-medium text-slate-700 mb-1 dark:text-slate-300">材质</label>
+          <div className="flex gap-1.5">
+            <button
+              onClick={() => handleMaterialCategoryChange('')}
+              className={structBtnClass(filter.material_category === '' && !filter.material)}
+            >
+              全部
+            </button>
+            <button
+              onClick={() => handleMaterialCategoryChange('carbon')}
+              className={structBtnClass(filter.material_category === 'carbon')}
+            >
+              碳钢
+            </button>
+            <button
+              onClick={() => handleMaterialCategoryChange('stainless')}
+              className={structBtnClass(filter.material_category === 'stainless')}
+            >
+              不锈钢
+            </button>
+          </div>
+        </div>
+
+  
+
+        {/* 流向 */}
+        <div>
+          <label className="block text-xs font-medium text-slate-700 mb-1 dark:text-slate-300">流向</label>
+          <div className="flex gap-1.5">
+            <button
+              onClick={() => handleChange('flow_direction', '')}
+              className={structBtnClass(filter.flow_direction === '')}
+            >
+              全部
+            </button>
+            <button
+              onClick={() => handleChange('flow_direction', '左进右出')}
+              className={structBtnClass(filter.flow_direction === '左进右出')}
+            >
+              左进右出
+            </button>
+            <button
+              onClick={() => handleChange('flow_direction', '右进左出')}
+              className={structBtnClass(filter.flow_direction === '右进左出')}
+            >
+              右进左出
+            </button>
+          </div>
+        </div>
+      {/* 备注模糊搜索 */}
+        <div>
+          <label className="block text-xs font-medium text-slate-700 mb-1 dark:text-slate-300">备注</label>
+          <ClearableInput
+            type="text"
+            value={filter.remark}
+            onChange={(v) => handleChange('remark', v)}
+            placeholder="输入备注关键词"
+          />
+        </div>
+        {/* 容积 */}
+        <div>
+          <label className="block text-xs font-medium text-slate-700 mb-1 dark:text-slate-300">容积 (m³)</label>
+          <div className="flex items-center gap-1.5">
+            <ClearableInput
               type="number"
               step="0.1"
               value={filter.volume_min}
-              onChange={(e) => handleChange('volume_min', e.target.value)}
+              onChange={(v) => handleChange('volume_min', v)}
               placeholder="最小"
-              className="flex-1 input-field text-sm"
+              wrapperClassName="min-w-0 flex-1"
             />
-            <span className="text-slate-400 dark:text-slate-500">-</span>
-            <input
+            <span className="text-slate-400 text-xs">-</span>
+            <ClearableInput
               type="number"
               step="0.1"
               value={filter.volume_max}
-              onChange={(e) => handleChange('volume_max', e.target.value)}
+              onChange={(v) => handleChange('volume_max', v)}
               placeholder="最大"
-              className="flex-1 input-field text-sm"
+              wrapperClassName="min-w-0 flex-1"
             />
           </div>
           <input
@@ -114,29 +227,30 @@ export function FilterSidebar({
             step="0.5"
             value={filter.volume_max || 50}
             onChange={(e) => handleChange('volume_max', e.target.value)}
-            className="input-range mt-3"
+            className="input-range mt-1.5 w-full"
           />
         </div>
 
-        <div className="mb-5">
-          <label className="block text-sm font-medium text-slate-700 mb-2 dark:text-slate-300">设计压力 (MPa)</label>
-          <div className="flex items-center gap-2">
-            <input
+        {/* 设计压力 */}
+        <div>
+          <label className="block text-xs font-medium text-slate-700 mb-1 dark:text-slate-300">设计压力 (MPa)</label>
+          <div className="flex items-center gap-1.5">
+            <ClearableInput
               type="number"
               step="0.1"
               value={filter.design_pressure_min}
-              onChange={(e) => handleChange('design_pressure_min', e.target.value)}
+              onChange={(v) => handleChange('design_pressure_min', v)}
               placeholder="最小"
-              className="flex-1 input-field text-sm"
+              wrapperClassName="min-w-0 flex-1"
             />
-            <span className="text-slate-400 dark:text-slate-500">-</span>
-            <input
+            <span className="text-slate-400 text-xs">-</span>
+            <ClearableInput
               type="number"
               step="0.1"
               value={filter.design_pressure_max}
-              onChange={(e) => handleChange('design_pressure_max', e.target.value)}
+              onChange={(v) => handleChange('design_pressure_max', v)}
               placeholder="最大"
-              className="flex-1 input-field text-sm"
+              wrapperClassName="min-w-0 flex-1"
             />
           </div>
           <input
@@ -146,27 +260,28 @@ export function FilterSidebar({
             step="0.1"
             value={filter.design_pressure_max || 10}
             onChange={(e) => handleChange('design_pressure_max', e.target.value)}
-            className="input-range mt-3"
+            className="input-range mt-1.5 w-full"
           />
         </div>
 
-        <div className="mb-5">
-          <label className="block text-sm font-medium text-slate-700 mb-2 dark:text-slate-300">公称直径 (mm)</label>
-          <div className="flex items-center gap-2">
-            <input
+        {/* 公称直径 */}
+        <div>
+          <label className="block text-xs font-medium text-slate-700 mb-1 dark:text-slate-300">公称直径 (mm)</label>
+          <div className="flex items-center gap-1.5">
+            <ClearableInput
               type="number"
               value={filter.nominal_diameter_min}
-              onChange={(e) => handleChange('nominal_diameter_min', e.target.value)}
+              onChange={(v) => handleChange('nominal_diameter_min', v)}
               placeholder="最小"
-              className="flex-1 input-field text-sm"
+              wrapperClassName="min-w-0 flex-1"
             />
-            <span className="text-slate-400 dark:text-slate-500">-</span>
-            <input
+            <span className="text-slate-400 text-xs">-</span>
+            <ClearableInput
               type="number"
               value={filter.nominal_diameter_max}
-              onChange={(e) => handleChange('nominal_diameter_max', e.target.value)}
+              onChange={(v) => handleChange('nominal_diameter_max', v)}
               placeholder="最大"
-              className="flex-1 input-field text-sm"
+              wrapperClassName="min-w-0 flex-1"
             />
           </div>
           <input
@@ -176,65 +291,71 @@ export function FilterSidebar({
             step="50"
             value={filter.nominal_diameter_max || 3000}
             onChange={(e) => handleChange('nominal_diameter_max', e.target.value)}
-            className="input-range mt-3"
+            className="input-range mt-1.5 w-full"
           />
         </div>
 
-        <div className="border-t border-slate-200 pt-4 dark:border-slate-700">
+        {/* 工艺与设计 */}
+        <div className="border-t border-slate-200 pt-2 dark:border-slate-700">
           <button
             onClick={() => toggleSection('process')}
-            className="w-full flex items-center justify-between text-sm font-medium text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100"
+            className="w-full flex items-center justify-between text-xs font-medium text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100"
           >
             <span>工艺与设计</span>
             <ChevronDown
-              className={`w-4 h-4 transition-transform ${expandedSections.process ? 'rotate-180' : ''}`}
+              className={`w-3.5 h-3.5 transition-transform ${expandedSections.process ? 'rotate-180' : ''}`}
             />
           </button>
           {expandedSections.process && (
-            <div className="mt-3 space-y-3">
+            <div className="mt-2 space-y-2">
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1 dark:text-slate-400">材质</label>
+                <label className="block text-[11px] font-medium text-slate-600 mb-0.5 dark:text-slate-400">具体材质</label>
                 <select
                   value={filter.material}
-                  onChange={(e) => handleChange('material', e.target.value)}
-                  className="w-full input-field text-sm"
+                  onChange={(e) => handleMaterialChange(e.target.value)}
+                  className="w-full input-field text-xs py-1"
                 >
-                  <option value="">全部材质</option>
-                  {materialOptions.map((m) => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ))}
+                  <option value="">不限</option>
+                  {materialOptions
+                    .filter((m) => {
+                      if (!filter.material_category) return true;
+                      return materialCategoryMap[m] === filter.material_category;
+                    })
+                    .map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1 dark:text-slate-400">设计温度 (℃)</label>
-                <div className="flex items-center gap-2">
-                  <input
+                <label className="block text-[11px] font-medium text-slate-600 mb-0.5 dark:text-slate-400">设计温度 (℃)</label>
+                <div className="flex items-center gap-1.5">
+                  <ClearableInput
                     type="number"
                     value={filter.design_temperature_min}
-                    onChange={(e) => handleChange('design_temperature_min', e.target.value)}
+                    onChange={(v) => handleChange('design_temperature_min', v)}
                     placeholder="最小"
-                    className="flex-1 input-field text-sm"
+                    wrapperClassName="min-w-0 flex-1"
                   />
-                  <span className="text-slate-400 dark:text-slate-500">-</span>
-                  <input
+                  <span className="text-slate-400 text-xs">-</span>
+                  <ClearableInput
                     type="number"
                     value={filter.design_temperature_max}
-                    onChange={(e) => handleChange('design_temperature_max', e.target.value)}
+                    onChange={(v) => handleChange('design_temperature_max', v)}
                     placeholder="最大"
-                    className="flex-1 input-field text-sm"
+                    wrapperClassName="min-w-0 flex-1"
                   />
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1 dark:text-slate-400">介质</label>
+                <label className="block text-[11px] font-medium text-slate-600 mb-0.5 dark:text-slate-400">介质</label>
                 <select
                   value={filter.medium}
                   onChange={(e) => handleChange('medium', e.target.value)}
-                  className="w-full input-field text-sm"
+                  className="w-full input-field text-xs py-1"
                 >
-                  <option value="">全部介质</option>
+                  <option value="">不限</option>
                   {mediumOptions.map((m) => (
                     <option key={m} value={m}>
                       {m}
@@ -243,22 +364,22 @@ export function FilterSidebar({
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1 dark:text-slate-400">设计使用年限 (年)</label>
-                <div className="flex items-center gap-2">
-                  <input
+                <label className="block text-[11px] font-medium text-slate-600 mb-0.5 dark:text-slate-400">设计使用年限 (年)</label>
+                <div className="flex items-center gap-1.5">
+                  <ClearableInput
                     type="number"
                     value={filter.design_life_min}
-                    onChange={(e) => handleChange('design_life_min', e.target.value)}
+                    onChange={(v) => handleChange('design_life_min', v)}
                     placeholder="最小"
-                    className="flex-1 input-field text-sm"
+                    wrapperClassName="min-w-0 flex-1"
                   />
-                  <span className="text-slate-400 dark:text-slate-500">-</span>
-                  <input
+                  <span className="text-slate-400 text-xs">-</span>
+                  <ClearableInput
                     type="number"
                     value={filter.design_life_max}
-                    onChange={(e) => handleChange('design_life_max', e.target.value)}
+                    onChange={(v) => handleChange('design_life_max', v)}
                     placeholder="最大"
-                    className="flex-1 input-field text-sm"
+                    wrapperClassName="min-w-0 flex-1"
                   />
                 </div>
               </div>
@@ -266,77 +387,58 @@ export function FilterSidebar({
           )}
         </div>
 
-        <div className="border-t border-slate-200 pt-4 mt-2 dark:border-slate-700">
+        {/* 几何尺寸 */}
+        <div className="border-t border-slate-200 pt-2 dark:border-slate-700">
           <button
             onClick={() => toggleSection('geometry')}
-            className="w-full flex items-center justify-between text-sm font-medium text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100"
+            className="w-full flex items-center justify-between text-xs font-medium text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100"
           >
             <span>几何尺寸</span>
             <ChevronDown
-              className={`w-4 h-4 transition-transform ${expandedSections.geometry ? 'rotate-180' : ''}`}
+              className={`w-3.5 h-3.5 transition-transform ${expandedSections.geometry ? 'rotate-180' : ''}`}
             />
           </button>
           {expandedSections.geometry && (
-            <div className="mt-3 space-y-3">
+            <div className="mt-2 space-y-2">
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1 dark:text-slate-400">壁厚 (mm)</label>
-                <div className="flex items-center gap-2">
-                  <input
+                <label className="block text-[11px] font-medium text-slate-600 mb-0.5 dark:text-slate-400">壁厚 (mm)</label>
+                <div className="flex items-center gap-1.5">
+                  <ClearableInput
                     type="number"
                     step="0.5"
                     value={filter.wall_thickness_min}
-                    onChange={(e) => handleChange('wall_thickness_min', e.target.value)}
+                    onChange={(v) => handleChange('wall_thickness_min', v)}
                     placeholder="最小"
-                    className="flex-1 input-field text-sm"
+                    wrapperClassName="min-w-0 flex-1"
                   />
-                  <span className="text-slate-400 dark:text-slate-500">-</span>
-                  <input
+                  <span className="text-slate-400 text-xs">-</span>
+                  <ClearableInput
                     type="number"
                     step="0.5"
                     value={filter.wall_thickness_max}
-                    onChange={(e) => handleChange('wall_thickness_max', e.target.value)}
+                    onChange={(v) => handleChange('wall_thickness_max', v)}
                     placeholder="最大"
-                    className="flex-1 input-field text-sm"
+                    wrapperClassName="min-w-0 flex-1"
                   />
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1 dark:text-slate-400">设备总高/总长 (mm)</label>
-                <div className="flex items-center gap-2">
-                  <input
+                <label className="block text-[11px] font-medium text-slate-600 mb-0.5 dark:text-slate-400">设备总高/总长 (mm)</label>
+                <div className="flex items-center gap-1.5">
+                  <ClearableInput
                     type="number"
                     value={filter.weight_min}
-                    onChange={(e) => handleChange('weight_min', e.target.value)}
+                    onChange={(v) => handleChange('weight_min', v)}
                     placeholder="最小"
-                    className="flex-1 input-field text-sm"
+                    wrapperClassName="min-w-0 flex-1"
                   />
-                  <span className="text-slate-400 dark:text-slate-500">-</span>
-                  <input
+                  <span className="text-slate-400 text-xs">-</span>
+                  <ClearableInput
                     type="number"
                     value={filter.weight_max}
-                    onChange={(e) => handleChange('weight_max', e.target.value)}
+                    onChange={(v) => handleChange('weight_max', v)}
                     placeholder="最大"
-                    className="flex-1 input-field text-sm"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1 dark:text-slate-400">重量 (kg)</label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    value={filter.weight_min}
-                    onChange={(e) => handleChange('weight_min', e.target.value)}
-                    placeholder="最小"
-                    className="flex-1 input-field text-sm"
-                  />
-                  <span className="text-slate-400 dark:text-slate-500">-</span>
-                  <input
-                    type="number"
-                    value={filter.weight_max}
-                    onChange={(e) => handleChange('weight_max', e.target.value)}
-                    placeholder="最大"
-                    className="flex-1 input-field text-sm"
+                    wrapperClassName="min-w-0 flex-1"
                   />
                 </div>
               </div>
@@ -344,26 +446,27 @@ export function FilterSidebar({
           )}
         </div>
 
-        <div className="border-t border-slate-200 pt-4 mt-2 dark:border-slate-700">
+        {/* 接管与接口 */}
+        <div className="border-t border-slate-200 pt-2 dark:border-slate-700">
           <button
             onClick={() => toggleSection('connection')}
-            className="w-full flex items-center justify-between text-sm font-medium text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100"
+            className="w-full flex items-center justify-between text-xs font-medium text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100"
           >
             <span>接管与接口</span>
             <ChevronDown
-              className={`w-4 h-4 transition-transform ${expandedSections.connection ? 'rotate-180' : ''}`}
+              className={`w-3.5 h-3.5 transition-transform ${expandedSections.connection ? 'rotate-180' : ''}`}
             />
           </button>
           {expandedSections.connection && (
-            <div className="mt-3 space-y-3">
+            <div className="mt-2 space-y-2">
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1 dark:text-slate-400">安全阀接口</label>
+                <label className="block text-[11px] font-medium text-slate-600 mb-0.5 dark:text-slate-400">安全阀接口</label>
                 <select
                   value={filter.safety_valve_connection}
                   onChange={(e) => handleChange('safety_valve_connection', e.target.value)}
-                  className="w-full input-field text-sm"
+                  className="w-full input-field text-xs py-1"
                 >
-                  <option value="">全部</option>
+                  <option value="">不限</option>
                   {connectionOptions.map((c) => (
                     <option key={c} value={c}>
                       {c}
@@ -372,13 +475,13 @@ export function FilterSidebar({
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1 dark:text-slate-400">排污口</label>
+                <label className="block text-[11px] font-medium text-slate-600 mb-0.5 dark:text-slate-400">排污口</label>
                 <select
                   value={filter.drain_connection}
                   onChange={(e) => handleChange('drain_connection', e.target.value)}
-                  className="w-full input-field text-sm"
+                  className="w-full input-field text-xs py-1"
                 >
-                  <option value="">全部</option>
+                  <option value="">不限</option>
                   {connectionOptions.map((c) => (
                     <option key={c} value={c}>
                       {c}
@@ -387,13 +490,13 @@ export function FilterSidebar({
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1 dark:text-slate-400">进出口连接</label>
+                <label className="block text-[11px] font-medium text-slate-600 mb-0.5 dark:text-slate-400">进出口连接</label>
                 <select
                   value={filter.inlet_connection}
                   onChange={(e) => handleChange('inlet_connection', e.target.value)}
-                  className="w-full input-field text-sm mb-2"
+                  className="w-full input-field text-xs py-1"
                 >
-                  <option value="">全部</option>
+                  <option value="">不限</option>
                   {connectionOptions.map((c) => (
                     <option key={c} value={c}>
                       {c}
@@ -401,25 +504,23 @@ export function FilterSidebar({
                   ))}
                 </select>
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-1.5">
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1 dark:text-slate-400">几进</label>
-                  <input
+                  <label className="block text-[11px] font-medium text-slate-600 mb-0.5 dark:text-slate-400">几进</label>
+                  <ClearableInput
                     type="number"
                     value={filter.inlet_count}
-                    onChange={(e) => handleChange('inlet_count', e.target.value)}
+                    onChange={(v) => handleChange('inlet_count', v)}
                     placeholder="进"
-                    className="w-full input-field text-sm"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1 dark:text-slate-400">几出</label>
-                  <input
+                  <label className="block text-[11px] font-medium text-slate-600 mb-0.5 dark:text-slate-400">几出</label>
+                  <ClearableInput
                     type="number"
                     value={filter.outlet_count}
-                    onChange={(e) => handleChange('outlet_count', e.target.value)}
+                    onChange={(v) => handleChange('outlet_count', v)}
                     placeholder="出"
-                    className="w-full input-field text-sm"
                   />
                 </div>
               </div>
@@ -428,19 +529,19 @@ export function FilterSidebar({
         </div>
       </div>
 
-      <div className="p-4 border-t border-slate-200 flex gap-3 dark:border-slate-700">
+      <div className="px-3 py-2 border-t border-slate-200 flex gap-2 dark:border-slate-700">
         <button
           onClick={onReset}
-          className="flex-1 flex items-center justify-center gap-2 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors text-sm font-medium dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600"
+          className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-slate-100 text-slate-700 rounded-md hover:bg-slate-200 transition-colors text-xs font-medium dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600"
         >
-          <RotateCcw className="w-4 h-4" />
-          重置筛选
+          <RotateCcw className="w-3 h-3" />
+          重置
         </button>
         <button
           onClick={onApply}
-          className="flex-1 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors text-sm font-medium"
+          className="flex-1 py-1.5 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition-colors text-xs font-medium"
         >
-          应用筛选 ({resultCount})
+          应用 ({resultCount})
         </button>
       </div>
     </aside>

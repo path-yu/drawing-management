@@ -5,7 +5,18 @@ export const mockDrawings: VesselDrawing[] = [
     
 ];
 
-export const materialOptions = ['Q235B', 'Q345R', '304不锈钢', '316不锈钢', '20R', '16MnR'];
+export const materialOptions = ['Q235B', 'Q245R', 'Q345R', 'S30408', 'S30403', 'S31608', 'S31603'];
+
+// 材质分类映射
+export const materialCategoryMap: Record<string, 'carbon' | 'stainless'> = {
+  Q235B: 'carbon',
+  Q245R: 'carbon',
+  Q345R: 'carbon',
+  S30408: 'stainless',
+  S30403: 'stainless',
+  S31608: 'stainless',
+  S31603: 'stainless',
+};
 
 export const mediumOptions = ['压缩空气', '氮气', '天然气', '化工原料', '腐蚀性介质', '蒸汽', '水'];
 

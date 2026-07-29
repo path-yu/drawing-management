@@ -20,5 +20,6 @@ export default defineConfig({server: {
     alias: {
       '@': '/src',
     },
+    dedupe: ['react', 'react-dom'],
   },
 })

@@ -139,3 +139,55 @@ input[type="range"]::-moz-range-thumb {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+/* 自定义 Range 基础样式 */
+.custom-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 5px; /* 轨道细化 */
+  background: #e2e8f0; /* 轨道未选中的背景色 (slate-200) */
+  border-radius: 9999px;
+  outline: none;
+  transition: background 0.2s ease;
+}
+
+/* 1. Chrome, Safari, Edge, Opera 滑块 (Thumb) 样式 */
+.custom-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #2563eb; /* 滑块主体颜色 */
+  border: 2px solid #ffffff; /* 白色精细内边框 */
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2); /* 轻微悬浮阴影 */
+  cursor: pointer;
+  transition: transform 0.15s ease, background-color 0.15s ease;
+}
+
+/* 鼠标悬浮与拖动时增亮+放大 */
+.custom-range::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+  background: #1d4ed8;
+}
+
+.custom-range::-webkit-slider-thumb:active {
+  transform: scale(1.25);
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.2); /* 拖动时的外扩散光晕 */
+}
+
+/* 2. Firefox 滑块样式兼容 */
+.custom-range::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #2563eb;
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  transition: transform 0.15s ease, background-color 0.15s ease;
+}
+
+.custom-range::-moz-range-thumb:hover {
+  transform: scale(1.15);
+}

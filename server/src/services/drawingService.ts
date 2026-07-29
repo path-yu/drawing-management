@@ -61,6 +61,26 @@ export async function generatePDFPreview(
 }
 
 /**
+ * 安全的 decodeURIComponent，遇到无效编码时不抛异常，返回最佳解码结果
+ */
+function safeDecodeURIComponent(str: string): string {
+  try {
+    return decodeURIComponent(str);
+  } catch {
+    // 将孤立的 %（后面不是两位十六进制数字）替换为 %25，然后重新解码
+    const cleaned = str.replace(/%(?![0-9A-Fa-f]{2})/g, '%25');
+    try {
+      return decodeURIComponent(cleaned);
+    } catch {
+      // 如果仍然失败，返回将所有 %XX 做逐段解码的结果
+      return cleaned.replace(/%[0-9A-Fa-f]{2}/g, (match) => {
+        try { return decodeURIComponent(match); } catch { return match; }
+      });
+    }
+  }
+}
+
+/**
  * 使用 pdf2json 按坐标排序提取 PDF 文本（无需 pdfjs-dist / Canvas）
  * @param filePath PDF 文件绝对路径
  * @param lineThreshold 同一行 Y 坐标的偏差容差（默认 0.5）
@@ -88,7 +108,7 @@ export async function extractTextFromPDF(
           page.Texts.forEach((textItem: any) => {
             const x = Number(textItem.x.toFixed(1));
             const y = Number(textItem.y.toFixed(1));
-            const str = decodeURIComponent(
+            const str = safeDecodeURIComponent(
               textItem.R.map((r: any) => r.T).join('')
             ).trim();
 
@@ -194,65 +214,97 @@ export async function analyzePDFWithDeepSeek(pagesText: string[], filePath: stri
     const messages: any[] = [
         {
             role: 'system',
-            content: `你是一个专业的工业图纸数据提取专家。请根据用户提供的PDF图纸文本内容，提取以下结构化信息，并以JSON格式返回（不要包含markdown代码块标记）：
+            content: `你是一个专业的压力容器图纸数据提取专家。你将收到从压力容器PDF图纸中提取的文本内容，请准确提取技术参数和管口信息，以纯JSON格式返回结果（不要使用markdown代码块包裹，不要输出任何解释性文字）。
 
-请严格按照以下JSON结构返回，字段名必须完全一致：
+## 输出格式
+
+严格按照以下JSON结构返回，字段名必须完全一致，字段顺序保持一致：
 {
-  "material_code": "物料编码（从图纸中提取，例如：0322A00120）",
-  "version": "版本号,",
-  "created_by": "创建人",
-  "updated_by": "更新人",
-  "standard": "规格（从图中提取，例如CQG20/1.1）,规格在规格文字的右侧",
-  "title": "名称（从图纸中提取，如储气罐或者氧气储罐之类）",
-  "remark": "备注（从图纸中提取，包含图纸日期等信息，例如2026.6.25，例如100%RT，酸洗，抛光，脱脂之类的特殊处理）",
-  "working_pressure": 工作压力数值（number类型）,
-  "design_pressure": 设计压力数值（number类型）,
-  "design_temperature": 设计温度数值（number类型）,
-  "volume": 容积数值（number类型,从图纸中提取,例如CQG20/1.1,其中20为容积数值,1.1为设计压力）,
-  "material": "材料名称，例如Q345R or S30408",
-  "design_life": 使用年限数值（number类型）,
-  "medium": "介质名称",
-  "nominal_diameter": 公称直径mm（number类型）从图中提取，例如∅2400，∅2200之类的,
-  "wall_thickness": 壁厚mm（number类型）从图中提取，它在公称直径尺寸线附件,如果是立式则在（左侧or右侧），卧式在（上方or下方）附近查找板厚标注，提取该具体数值,
-  "total_height_or_length": 总高或总长mm（number类型）,
-  "weight": 重量kg（number类型）,
-  "safety_valve_connection": "安全阀接口规格",
+  "material_code": "物料编码，从图纸标题栏或明细栏中提取，如 0322A00120",
+  "version": "版本号，如 V1、V_1，无版本号则填 null",
+  "structure_type": "结构类型，必须为 '立式' 或 '卧式'，根据图纸主视图判断：罐体轴线垂直为立式，水平为卧式",
+  "standard": "规格型号，通常位于图纸名称右侧，如 CQG20/1.1（其中20为容积，1.1为设计压力）",
+  "title": "设备名称，如 储气罐、氧气储罐、空气缓冲罐等",
+  "remark": "备注信息，包括图纸日期（如 2026.6.25）、检测要求（如 100%RT）、表面处理（如 酸洗、抛光、脱脂）等特殊要求，无备注则填 null",
+  "working_pressure": 工作压力数值（MPa，number类型）,
+  "design_pressure": 设计压力数值（MPa，number类型）,
+  "design_temperature": 设计温度数值（℃，number类型）,
+  "volume": 容积数值（m³，number类型）,
+  "material": "主体材料牌号，如 Q345R、S30408、Q245R 等",
+  "design_life": 设计使用年限数值（年，number类型）,
+  "medium": "工作介质名称，储气罐通常为 '空气'，氧气罐为 '氧气' 等",
+  "nominal_diameter": 公称直径数值（mm，number类型），标注格式如 ∅2400、DN2400、φ2200，提取数字部分,
+  "wall_thickness": 筒体壁厚数值（mm，number类型）,
+  "total_height_or_length": 总高（立式）或总长（卧式）数值（mm，number类型）,
+  "weight": 设备重量数值（kg，number类型）,
+  "safety_valve_connection": "安全阀接口规格，如 DN50、M36×2 等",
   "drain_connection": "排污口接口规格",
-  "inlet_connection": "进气口接口规格",
-  "outlet_connection": "出气口接口规格",
-  "inlet_count": 进气口数量（number类型）,
-  "outlet_count": 出气口数量（number类型）,
-  "flow_direction": "右进左出" 或 "左进右出" 或 null,
-  "created_at": "创建时间",
-  "updated_at": "更新时间"
+  "inlet_connection": "进气口/进口接口规格",
+  "outlet_connection": "出气口/出口接口规格",
+  "inlet_count": 进气口数量（number类型，通常为1）,
+  "outlet_count": 出气口数量（number类型，通常为1）,
+  "flow_direction": "气流方向，必须为 '右进左出' 或 '左进右出'，无法判断则填 null",
+  "created_by": "设计/制图人姓名，从标题栏提取，无则填 null",
+  "updated_by": "审核/更新人姓名，从标题栏提取，无则填 null",
+  "is_simple": "是否为简单容器，必须为 true 或 false"(从图纸提取,如果有简单压力容器文字则为true,否则为false)
 }
 
-字段提取规则：
-请利用"序号"、"规格"、"用途"的紧邻关系提取：
-- safety_valve_connection: 找到用途是 "安全阀口" 的上一行或下一行（通常是规格）。
-- drain_connection: 找到用途是 "排污口" 的上一行或下一行（通常是规格）。
-- inlet_connection: 找到用途是 "进气口" 的上一行或下一行（通常是规格）。
-- outlet_connection: 找到用途是 "出气口" 的上一行或下一行（通常是规格）。
-- inlet_count: 统计用途为 "进气口" 的行数量（通常为1）。
-- outlet_count: 统计用途为 "出气口" 的行数量（通常为1）。
-. wall_thickness (壁厚):
-   - 压力容器筒体壁厚通常为 4~30 之间的较小整数（如 6, 8, 10, 12, 14, 16 等）。
-   - 在图纸筒体外侧/上方标注中，若存在孤立的 两位数字（如 12），且不属于管口编号（N1-N6）和定位间距（通常大于50），即为壁厚数值。
-. medium: 介质名称，储气罐通常为"空气"
+## 提取规则
 
-flow_direction的值必须严格判断为 "右进左出" 或 "左进右出"。
-1. 先查看"管口表"，找到用途为"进气口"的管口序号（例如 N6）。
-2. 再查看"管口方位图"信息，确认该进气口序号对应的角度：如果是 90°，代表右侧；如果是 270°，代表左侧。
-3. 同理，找到用途为"出气口"的管口序号（例如 N4），确认其对应的角度。
-4. 输出最终结果字段 "flow_direction"，严格为以下两种之一：
-   - 如果进气口在右侧(90°)，出气口在左侧(270°)，则输出 "右进左出"
-   - 如果进气口在左侧(270°)，出气口在右侧(90°)，则输出 "左进右出"
+### 数值字段通用规则
+- 所有数值字段只提取数字部分，去掉单位（MPa、℃、m³、mm、kg等）
+- 数值保留原始精度，不要四舍五入
+- 无法提取的数值字段填 null
 
-**注意：**
-- 管口方位图的方位定义：0°=正上, 90°=右侧(进气), 180°=正下, 270°=左侧(出气)。
-- 请确保 "进气口" 和 "出气口" 的方向逻辑绝对正确，不要写反！
+### 规格与容积提取
+- 规格型号通常出现在图纸标题栏的"规格"或"图号"栏中，格式如 "CQG20/1.1"
+- 从规格型号中可解析：容积为斜杠前的数字（20），设计压力为斜杠后的数字（1.1）
+- 如果规格和技术参数表中都有数值，以技术参数表中的数据为准
 
-如果某些数据无法从PDF中提取，请填 null。请严格确保输出是合法的JSON格式。`
+### 壁厚提取（wall_thickness）
+- 壁厚是压力容器筒体的钢板厚度，通常为 4~30 之间的整数（如 6、8、10、12、14、16 等）
+- 查找位置：
+  - 立式容器：在筒体左侧或右侧的尺寸标注中，靠近公称直径（∅标注）的板厚标注
+  - 卧式容器：在筒体上方或下方的尺寸标注中
+- 判断依据：在筒体轮廓线附近的孤立两位数数字，不属于管口编号（N1~N6）和定位间距（通常>50mm）
+
+### 总高/总长提取（total_height_or_length）
+- 立式容器：提取设备总高度（从支腿底部到顶部法兰/封头顶部）
+- 卧式容器：提取设备总长度（从左端封头到右端封头切线或总长度）
+- 通常是图纸上最大的线性尺寸标注
+
+### 管口信息提取（利用管口表）
+在"管口表"或"接管表"中，按以下规则提取：
+- 找到表头包含"序号"、"规格"、"用途"（或"名称"）的表格
+- safety_valve_connection：用途为"安全阀口"或"安全阀"对应的规格列值
+- drain_connection：用途为"排污口"或"排污"对应的规格列值
+- inlet_connection：用途为"进气口"、"进口"或"进气"对应的规格列值
+- outlet_connection：用途为"出气口"、"出口"或"出气"对应的规格列值
+- inlet_count：统计管口表中用途为进气/进口的行数
+- outlet_count：统计管口表中用途为出气/出口的行数
+- 如果同一用途有多个管口，规格用逗号分隔（如 "DN50,DN25"）
+
+### 气流方向判断（flow_direction）
+这是最关键的判断，务必仔细分析：
+1. 先在"管口表"中找到进气口对应的管口序号（如 N6）和出气口对应的管口序号（如 N4）
+2. 再查看"管口方位图"（通常是一个圆形视图，标注各管口角度位置）
+3. 方位图角度定义：0°=正上方，90°=右侧，180°=正下方，270°=左侧
+4. 根据进气口和出气口的角度位置判断：
+   - 进气口在右侧（约90°），出气口在左侧（约270°）→ "右进左出"
+   - 进气口在左侧（约270°），出气口在右侧（约90°）→ "左进右出"
+5. 如果方位图信息不足无法判断，填 null
+
+### 介质判断
+- 根据设备名称和用途判断：储气罐→"空气"，氧气储罐→"氧气"，氮气罐→"氮气"
+- 如果技术参数表中明确标注了介质，以表中数据为准
+
+## 输出要求
+- 必须输出合法的JSON格式，字段名和类型必须符合上述定义
+- string类型字段无法提取时填 null，不要填空字符串 ""
+- number类型字段无法提取时填 null，不要填 0
+- flow_direction 只能填 "右进左出"、"左进右出" 或 null
+- structure_type 只能填 "立式" 或 "卧式"
+- 不要输出JSON以外的任何文字说明`
         }
     ];
 
@@ -260,7 +312,7 @@ flow_direction的值必须严格判断为 "右进左出" 或 "左进右出"。
     if (pagesText.length === 1) {
         messages.push({
             role: 'user',
-            content: `请解析以下PDF文件的文本内容。该文件是一张立式储气罐的示意图和技术参数表。请读取文字和表格内容并输出完整JSON。
+            content: `以下是从压力容器PDF图纸中提取的文本内容。该PDF包含图纸示意图、技术参数表和管口表。请仔细阅读所有文字和表格数据，按照系统提示中的规则提取结构化信息，输出完整的JSON。
 
 PDF文本内容：
 ${pagesText[0]}`
@@ -293,7 +345,7 @@ ${pagesText[0]}`
             // 最后一页：请求最终的结构化输出
             messages.push({
                 role: 'user',
-                content: `这是PDF的第 ${i + 1} 页（共 ${pagesText.length} 页）。请根据前面所有页面的内容和本页内容，综合分析并输出完整的JSON结构化数据。
+                content: `这是PDF的第 ${i + 1} 页（共 ${pagesText.length} 页，最后一页）。现在你已收到全部 ${pagesText.length} 页内容，请综合所有页面的信息（包括技术参数表、管口表、管口方位图等），按照系统提示中的提取规则，输出完整的结构化JSON。
 
 第 ${i + 1} 页内容：
 ${pagesText[i]}`
@@ -302,7 +354,7 @@ ${pagesText[i]}`
             // 非最后一页：告知AI这是第几页，让其记住内容
             messages.push({
                 role: 'user',
-                content: `这是PDF的第 ${i + 1} 页（共 ${pagesText.length} 页）。请阅读并记住本页内容，后续会继续提供其他页面。
+                content: `这是PDF的第 ${i + 1} 页（共 ${pagesText.length} 页）。请仔细阅读本页内容并记住关键信息（包括技术参数、管口规格、方位角度等），后续页面将继续提供。暂时不要输出结果，等待最后一页时再统一输出JSON。
 
 第 ${i + 1} 页内容：
 ${pagesText[i]}`

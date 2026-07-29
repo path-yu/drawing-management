@@ -29,11 +29,13 @@ export interface VesselDrawing {
   inlet_count: number;
   outlet_count: number;
   flow_direction: '右进左出' | '左进右出';
+  is_simple: boolean;
   created_at: string;
   updated_at: string;
 }
 
 export interface FilterState {
+  material_category: '' | 'carbon' | 'stainless' | 'all';
   structure_type: '' | '立式' | '卧式';
   volume_min: string;
   volume_max: string;
@@ -57,6 +59,9 @@ export interface FilterState {
   outlet_connection: string;
   inlet_count: string;
   outlet_count: string;
+  remark: string;
+  flow_direction: '' | '左进右出' | '右进左出';
+  is_simple: '' | 'true' | 'false';
 }
 
-export type ViewMode = 'table' | 'card' | 'split';
+export type ViewMode = 'preview' | 'table' | 'split';

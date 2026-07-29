@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
 import {
-  Search,
   Plus,
   Upload,
   Bell,
@@ -27,8 +26,7 @@ interface HeaderProps {
   onBatchUpload?: () => void;
 }
 
-export function Header({ onSearch, onCreate, onBatchUpload }: HeaderProps) {
-  const [searchKeyword, setSearchKeyword] = useState('');
+export function Header({ onCreate, onBatchUpload }: HeaderProps) {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
@@ -45,12 +43,6 @@ export function Header({ onSearch, onCreate, onBatchUpload }: HeaderProps) {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-
-  const handleSearch = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      onSearch(searchKeyword);
-    }
-  };
 
   const handleLogout = () => {
     logout();
@@ -78,20 +70,19 @@ export function Header({ onSearch, onCreate, onBatchUpload }: HeaderProps) {
   const activeMenuPath = getActiveMenuPath();
 
   return (
-    <header className="bg-white border-b border-slate-200 px-6 py-3 sticky top-0 z-40 dark:bg-slate-800 dark:border-slate-700">
+    <header className="bg-white border-b border-slate-200 px-4 py-2 sticky top-0 z-40 dark:bg-slate-800 dark:border-slate-700">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-6">
-          <div className="flex items-center gap-3 cursor-pointer" onClick={() => navigate('/')}>
-            <div className="w-10 h-10 bg-primary-600 rounded-lg flex items-center justify-center">
-              <FileText className="w-6 h-6 text-white" />
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate('/')}>
+            <div className="w-8 h-8 bg-primary-600 rounded-md flex items-center justify-center">
+              <FileText className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-slate-800 dark:text-slate-100">压力容器方案简图管理平台</h1>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Vessel Drawing Management System</p>
+              <h1 className="text-base font-bold text-slate-800 dark:text-slate-100">压力容器图纸管理平台</h1>
             </div>
           </div>
 
-          <nav className="flex items-center gap-1 ml-4">
+          <nav className="flex items-center gap-0.5 ml-2">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = activeMenuPath === item.path;
@@ -99,13 +90,13 @@ export function Header({ onSearch, onCreate, onBatchUpload }: HeaderProps) {
                 <button
                   key={item.path}
                   onClick={() => navigate(item.path)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
                     isActive
                       ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
                       : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-slate-100'
                   }`}
                 >
-                  <Icon className="w-4 h-4" />
+                  <Icon className="w-3.5 h-3.5" />
                   {item.label}
                 </button>
               );
@@ -119,29 +110,17 @@ export function Header({ onSearch, onCreate, onBatchUpload }: HeaderProps) {
               return content;
             })}
           </nav>
-
-          <div className="relative ml-4">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder="搜索物料编码、图号、备注..."
-              value={searchKeyword}
-              onChange={(e) => setSearchKeyword(e.target.value)}
-              onKeyDown={handleSearch}
-              className="w-72 pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-slate-700 dark:border-slate-600 dark:text-white dark:placeholder-slate-400"
-            />
-          </div>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2">
           {isDashboard && (
             <>
               <PermissionGuard permission="drawing:create">
                 <button
                   onClick={onCreate}
-                  className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors text-sm font-medium"
+                  className="flex items-center gap-1 px-3 py-1.5 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition-colors text-xs font-medium"
                 >
-                  <Plus className="w-4 h-4" />
+                  <Plus className="w-3.5 h-3.5" />
                   新建图纸
                 </button>
               </PermissionGuard>
@@ -149,9 +128,9 @@ export function Header({ onSearch, onCreate, onBatchUpload }: HeaderProps) {
               <PermissionGuard permission="drawing:create">
                 <button
                   onClick={onBatchUpload}
-                  className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors text-sm font-medium dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600"
+                  className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 text-slate-700 rounded-md hover:bg-slate-200 transition-colors text-xs font-medium dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600"
                 >
-                  <Upload className="w-4 h-4" />
+                  <Upload className="w-3.5 h-3.5" />
                   批量上传
                 </button>
               </PermissionGuard>
@@ -162,9 +141,9 @@ export function Header({ onSearch, onCreate, onBatchUpload }: HeaderProps) {
             <PermissionGuard permission="user:create">
               <button
                 onClick={onCreate}
-                className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors text-sm font-medium"
+                className="flex items-center gap-1 px-3 py-1.5 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition-colors text-xs font-medium"
               >
-                <Plus className="w-4 h-4" />
+                <Plus className="w-3.5 h-3.5" />
                 新建用户
               </button>
             </PermissionGuard>
@@ -174,42 +153,41 @@ export function Header({ onSearch, onCreate, onBatchUpload }: HeaderProps) {
             <PermissionGuard permission="role:create">
               <button
                 onClick={onCreate}
-                className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors text-sm font-medium"
+                className="flex items-center gap-1 px-3 py-1.5 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition-colors text-xs font-medium"
               >
-                <Plus className="w-4 h-4" />
+                <Plus className="w-3.5 h-3.5" />
                 新建角色
               </button>
             </PermissionGuard>
           )}
 
-          <button className="relative p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors dark:text-slate-300 dark:hover:bg-slate-700">
-            <Bell className="w-5 h-5" />
-            <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+          <button className="relative p-1.5 text-slate-600 hover:bg-slate-100 rounded-md transition-colors dark:text-slate-300 dark:hover:bg-slate-700">
+            <Bell className="w-4 h-4" />
+            <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-red-500 rounded-full"></span>
           </button>
 
           <button
             onClick={toggleTheme}
-            className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors dark:text-slate-300 dark:hover:bg-slate-700"
+            className="p-1.5 text-slate-600 hover:bg-slate-100 rounded-md transition-colors dark:text-slate-300 dark:hover:bg-slate-700"
             title={theme === 'dark' ? '切换到亮色模式' : '切换到暗色模式'}
           >
-            {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+            {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           </button>
 
-          <div className="relative pl-4 border-l border-slate-200 dark:border-slate-700" ref={menuRef}>
+          <div className="relative pl-2 border-l border-slate-200 dark:border-slate-700" ref={menuRef}>
             <button
               onClick={() => setUserMenuOpen(!userMenuOpen)}
-              className="flex items-center gap-2.5 hover:bg-slate-50 p-1.5 -m-1.5 rounded-lg transition-colors dark:hover:bg-slate-700"
+              className="flex items-center gap-2 hover:bg-slate-50 p-1 -m-1 rounded-md transition-colors dark:hover:bg-slate-700"
             >
-              <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center dark:bg-primary-900/30">
-                <User className="w-4 h-4 text-primary-600 dark:text-primary-400" />
+              <div className="w-7 h-7 bg-primary-100 rounded-full flex items-center justify-center dark:bg-primary-900/30">
+                <User className="w-3.5 h-3.5 text-primary-600 dark:text-primary-400" />
               </div>
               <div className="text-left">
-                <p className="font-medium text-slate-800 text-sm dark:text-slate-100">
+                <p className="font-medium text-slate-800 text-xs dark:text-slate-100">
                   {user?.real_name || user?.username || '用户'}
                 </p>
-                <p className="text-xs text-slate-500 dark:text-slate-400">{user?.role_name || '未分配角色'}</p>
               </div>
-              <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${userMenuOpen ? 'rotate-180' : ''} dark:text-slate-500`} />
+              <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${userMenuOpen ? 'rotate-180' : ''} dark:text-slate-500`} />
             </button>
 
             {userMenuOpen && (

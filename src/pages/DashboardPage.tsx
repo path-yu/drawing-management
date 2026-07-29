@@ -1,14 +1,19 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { LayoutGrid, List, SplitSquareVertical, X, Trash2, CheckSquare, Square, AlertTriangle, RefreshCw, Search, Maximize2 } from 'lucide-react';
+import { LayoutGrid, List, SplitSquareVertical, X, Trash2, CheckSquare, Square, AlertTriangle, RefreshCw, Search, Maximize2, Columns, Download, Layers } from 'lucide-react';
+import { PDFDocument } from 'pdf-lib';
 import { Header } from '../components/Header';
 import { FilterSidebar } from '../components/FilterSidebar';
 import { DrawingCard } from '../components/DrawingCard';
 import { DataTable } from '../components/DataTable';
 import { DrawingPreviewModal } from '../components/DrawingPreviewModal';
 import { PermissionGuard } from '../components/PermissionGuard';
+import { ClearableInput } from '../components/ClearableInput';
+import { Waterfall } from '../components/Waterfall';
 import { VesselDrawing, FilterState, ViewMode } from '../types';
 import { api } from '../utils/api';
+import { downloadFile } from '../utils/download';
+import { DrawingSplitList } from '@/components/DrawingSplitList';
 
 interface DrawingSearchResponse {
   total: number;
@@ -17,10 +22,27 @@ interface DrawingSearchResponse {
   page_size: number;
 }
 
+const FILTER_STORAGE_KEY = 'vessel_drawing_filter_state';
+
+function loadPersistedState(): Partial<{
+  filter: FilterState;
+  searchKeyword: string;
+  viewMode: ViewMode;
+  columnCount: number;
+  sidebarCollapsed: boolean;
+}> {
+  try {
+    const raw = localStorage.getItem(FILTER_STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return {};
+}
+
 const initialFilter: FilterState = {
   structure_type: '',
   volume_min: '',
   volume_max: '',
+  material_category: '',
   design_pressure_min: '',
   design_pressure_max: '',
   nominal_diameter_min: '',
@@ -41,18 +63,40 @@ const initialFilter: FilterState = {
   outlet_connection: '',
   inlet_count: '',
   outlet_count: '',
+  remark: '',
+  flow_direction: '',
+  is_simple: '',
 };
 
 export function DashboardPage() {
   const { id: shareId } = useParams<{ id: string }>();
+  const persisted = shareId ? {} : loadPersistedState();
+
   const [drawings, setDrawings] = useState<VesselDrawing[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<FilterState>(initialFilter);
-  const [searchKeyword, setSearchKeyword] = useState('');
-  const [viewMode, setViewMode] = useState<ViewMode>('card');
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [filter, setFilter] = useState<FilterState>({ ...initialFilter, ...(persisted.filter || {}) });
+  const [searchKeyword, setSearchKeyword] = useState(persisted.searchKeyword || '');
+  const [viewMode, setViewMode] = useState<ViewMode>(persisted.viewMode || 'preview');
+  const [columnCount, setColumnCount] = useState(persisted.columnCount || 4);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(persisted.sidebarCollapsed || false);
   const [previewDrawing, setPreviewDrawing] = useState<VesselDrawing | null>(null);
-  const [appliedFilters, setAppliedFilters] = useState<string[]>([]);
+  const [appliedFilters, setAppliedFilters] = useState<string[]>(() => {
+    const f = { ...initialFilter, ...(persisted.filter || {}) };
+    const tags: string[] = [];
+    if (f.structure_type) tags.push(f.structure_type);
+    if (f.material_category && !f.material) {
+      tags.push(`材质: ${f.material_category === 'carbon' ? '碳钢' : f.material_category === 'stainless' ? '不锈钢' : '全部'}`);
+    }
+    if (f.material) tags.push(`材质: ${f.material}`);
+    if (f.volume_min || f.volume_max) tags.push(`容积 ${f.volume_min || '0'}-${f.volume_max || '∞'} m³`);
+    if (f.design_pressure_min || f.design_pressure_max) tags.push(`压力 ${f.design_pressure_min || '0'}-${f.design_pressure_max || '∞'} MPa`);
+    if (f.nominal_diameter_min || f.nominal_diameter_max) tags.push(`直径 ${f.nominal_diameter_min || '0'}-${f.nominal_diameter_max || '∞'} mm`);
+    if (f.medium) tags.push(f.medium);
+    if (f.remark) tags.push(`备注: ${f.remark}`);
+    if (f.flow_direction) tags.push(`流向: ${f.flow_direction}`);
+    if (f.is_simple) tags.push(`规范: ${f.is_simple === 'true' ? '简规' : '固规'}`);
+    return tags;
+  });
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<'single' | 'batch'>('single');
@@ -60,6 +104,20 @@ export function DashboardPage() {
   const [splitSelectedDrawing, setSplitSelectedDrawing] = useState<VesselDrawing | null>(null);
   // 记录用户是否手动关闭了内部分享的预览弹窗
   const sharePreviewClosedRef = useRef(false);
+
+  // 持久化筛选状态到 localStorage
+  useEffect(() => {
+    if (shareId) return;
+    try {
+      localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify({
+        filter,
+        searchKeyword,
+        viewMode,
+        columnCount,
+        sidebarCollapsed,
+      }));
+    } catch {}
+  }, [filter, searchKeyword, viewMode, columnCount, sidebarCollapsed, shareId]);
 
   useEffect(() => {
     fetchDrawings();
@@ -73,7 +131,7 @@ export function DashboardPage() {
       Object.entries(filter).forEach(([k, v]) => {
         if (v) params.append(k, v);
       });
-      params.append('page_size', '100');
+      params.append('page_size', '200');
       const res = await api.get<DrawingSearchResponse>(`/drawings/search?${params.toString()}`);
       if (res.code === 200) {
         setDrawings(res.data.list);
@@ -109,20 +167,30 @@ export function DashboardPage() {
 
   const handleResetFilter = () => {
     setFilter(initialFilter);
+    setSearchKeyword('');
     setAppliedFilters([]);
   };
 
   const handleApplyFilter = () => {
     const activeFilters: string[] = [];
     if (filter.structure_type) activeFilters.push(filter.structure_type);
+    if (filter.material_category && !filter.material) {
+      const catLabel = filter.material_category === 'carbon' ? '碳钢' : filter.material_category === 'stainless' ? '不锈钢' : '全部';
+      activeFilters.push(`材质: ${catLabel}`);
+    }
+    if (filter.material) {
+      activeFilters.push(`材质: ${filter.material}`);
+    }
     if (filter.volume_min || filter.volume_max)
       activeFilters.push(`容积 ${filter.volume_min || '0'}-${filter.volume_max || '∞'} m³`);
     if (filter.design_pressure_min || filter.design_pressure_max)
       activeFilters.push(`压力 ${filter.design_pressure_min || '0'}-${filter.design_pressure_max || '∞'} MPa`);
     if (filter.nominal_diameter_min || filter.nominal_diameter_max)
       activeFilters.push(`直径 ${filter.nominal_diameter_min || '0'}-${filter.nominal_diameter_max || '∞'} mm`);
-    if (filter.material) activeFilters.push(filter.material);
     if (filter.medium) activeFilters.push(filter.medium);
+    if (filter.remark) activeFilters.push(`备注: ${filter.remark}`);
+    if (filter.flow_direction) activeFilters.push(`流向: ${filter.flow_direction}`);
+    if (filter.is_simple) activeFilters.push(`规范: ${filter.is_simple === 'true' ? '简规' : '固规'}`);
     setAppliedFilters(activeFilters);
   };
 
@@ -137,9 +205,15 @@ export function DashboardPage() {
     } else if (filterText.includes('直径')) {
       setFilter((prev) => ({ ...prev, nominal_diameter_min: '', nominal_diameter_max: '' }));
     } else if (filterText.includes('材质')) {
-      setFilter((prev) => ({ ...prev, material: '' }));
+      setFilter((prev) => ({ ...prev, material: '', material_category: '' }));
     } else if (filterText.includes('介质')) {
       setFilter((prev) => ({ ...prev, medium: '' }));
+    } else if (filterText.includes('备注')) {
+      setFilter((prev) => ({ ...prev, remark: '' }));
+    } else if (filterText.includes('流向')) {
+      setFilter((prev) => ({ ...prev, flow_direction: '' }));
+    } else if (filterText.includes('规范')) {
+      setFilter((prev) => ({ ...prev, is_simple: '' }));
     }
   };
 
@@ -185,10 +259,101 @@ export function DashboardPage() {
     }
   };
 
+  const handleClearSelection = () => {
+    setSelectedIds(new Set());
+  };
+
   const handleBatchDelete = () => {
     setDeleteTarget('batch');
     setDeleteDrawing(null);
     setShowConfirmModal(true);
+  };
+
+  const getSelectedDrawings = () => {
+    return filteredDrawings.filter((d) => selectedIds.has(d.id));
+  };
+
+  const handleBatchDownloadPDF = async () => {
+    const selectedDrawings = getSelectedDrawings();
+    for (let i = 0; i < selectedDrawings.length; i++) {
+      const drawing = selectedDrawings[i];
+      const url = `http://localhost:3000${drawing.pdf_file_path}?download=1`;
+      const filename = drawing.pdf_file_path.split(/[/\\]/).pop() || `${drawing.material_code}.pdf`;
+      await downloadFile(url, { filename });
+      if (i < selectedDrawings.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      }
+    }
+  };
+
+  const handleBatchDownloadDWG = async () => {
+    const selectedDrawings = getSelectedDrawings();
+    for (let i = 0; i < selectedDrawings.length; i++) {
+      const drawing = selectedDrawings[i];
+      const url = `http://localhost:3000${drawing.dwg_file_path}?download=1`;
+      const filename = drawing.dwg_file_path.split(/[/\\]/).pop() || `${drawing.material_code}.dwg`;
+      await downloadFile(url, { filename });
+      if (i < selectedDrawings.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      }
+    }
+  };
+
+  const handleBatchMergePDF = async () => {
+    const selectedDrawings = getSelectedDrawings();
+    if (selectedDrawings.length === 0) {
+      alert('请先选择要合并的图纸');
+      return;
+    }
+
+    try {
+      // 创建新的PDF文档
+      const mergedPdf = await PDFDocument.create();
+
+      // 逐个加载并合并PDF
+      for (let i = 0; i < selectedDrawings.length; i++) {
+        const drawing = selectedDrawings[i];
+        const url = `http://localhost:3000${drawing.pdf_file_path}`;
+        
+        try {
+          const response = await fetch(url);
+          if (!response.ok) {
+            console.warn(`无法加载文件: ${drawing.file_name}`);
+            continue;
+          }
+          const pdfBytes = await response.arrayBuffer();
+          const pdf = await PDFDocument.load(pdfBytes);
+          const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
+          copiedPages.forEach((page) => {
+            mergedPdf.addPage(page);
+          });
+        } catch (err) {
+          console.error(`合并文件 ${drawing.file_name} 失败:`, err);
+        }
+      }
+
+      // 保存合并后的PDF
+      const mergedPdfBytes = await mergedPdf.save();
+      const blob = new Blob([mergedPdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' });
+      
+      // 生成文件名：使用当前时间戳
+      const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      const filename = `合并图纸_${timestamp}_${selectedDrawings.length}个文件.pdf`;
+      
+      // 下载文件
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+    } catch (error) {
+      console.error('合并PDF失败:', error);
+      alert('合并PDF失败，请重试');
+    }
   };
 
   const confirmDelete = async () => {
@@ -218,7 +383,7 @@ export function DashboardPage() {
     <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
       <Header onSearch={handleSearch} onCreate={handleCreate} onBatchUpload={handleBatchUpload} />
 
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden min-h-0">
         <FilterSidebar
           filter={filter}
           onFilterChange={setFilter}
@@ -229,16 +394,16 @@ export function DashboardPage() {
           resultCount={filteredDrawings.length}
         />
 
-        <main className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex items-center justify-between px-6 py-4 bg-white border-b border-slate-200 dark:bg-slate-800 dark:border-slate-700">
-            <div className="flex items-center gap-4">
+        <main className="flex-1 flex flex-col overflow-hidden min-h-0 min-w-0">
+          <div className="flex items-center justify-between px-4 py-2.5 bg-white border-b border-slate-200 dark:bg-slate-800 dark:border-slate-700 overflow-hidden min-w-0 gap-2">
+            <div className="flex items-center gap-3 min-w-0 flex-1">
               <div className="flex bg-slate-100 rounded-lg p-1 dark:bg-slate-700">
                 <button
-                  onClick={() => setViewMode('card')}
+                  onClick={() => setViewMode('preview')}
                   className={`p-2 rounded-md transition-colors ${
-                    viewMode === 'card' ? 'bg-white shadow-sm text-primary-600 dark:bg-slate-600 dark:text-primary-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                    viewMode === 'preview' ? 'bg-white shadow-sm text-primary-600 dark:bg-slate-600 dark:text-primary-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
                   }`}
-                  title="卡片视图"
+                  title="预览布局"
                 >
                   <LayoutGrid className="w-4 h-4" />
                 </button>
@@ -262,37 +427,51 @@ export function DashboardPage() {
                 </button>
               </div>
 
+              {/* 列数滑块（仅预览模式显示） */}
+              {viewMode === 'preview' && (
+                <div className="flex items-center gap-2 px-2 py-1 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
+                  <Columns className="w-3.5 h-3.5 text-slate-400" />
+                  <input
+                    type="range"
+                    min={2}
+                    max={8}
+                    value={columnCount}
+                    onChange={(e) => setColumnCount(Number(e.target.value))}
+                    className="w-24 h-1 accent-primary-500 cursor-pointer h-1"
+                  />
+                  <span className="text-xs text-slate-500 dark:text-slate-400 w-4 text-center font-mono">{columnCount}</span>
+                </div>
+              )}
+
               {/* 搜索框 */}
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="搜索物料编码、文件名..."
-                  value={searchKeyword}
-                  onChange={(e) => setSearchKeyword(e.target.value)}
-                  className="input-field pl-10 pr-4 py-2 w-64 text-sm"
-                />
-              </div>
+              <ClearableInput
+                type="text"
+                value={searchKeyword}
+                onChange={setSearchKeyword}
+                placeholder="搜索物料编码、文件名..."
+                wrapperClassName="flex-1 min-w-0 max-w-56"
+                prefix={<Search className="w-3.5 h-3.5 text-slate-400" />}
+              />
 
               {/* 刷新按钮 */}
               <button
                 onClick={fetchDrawings}
                 disabled={loading}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm font-medium ${
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md transition-colors text-xs font-medium ${
                   loading
                     ? 'bg-slate-100 text-slate-400 cursor-not-allowed dark:bg-slate-700'
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600'
                 }`}
               >
-                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
                 刷新
               </button>
 
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-1.5 min-w-0">
                 {appliedFilters.map((f) => (
                   <span
                     key={f}
-                    className="inline-flex items-center gap-1 px-3 py-1 bg-primary-50 text-primary-700 rounded-full text-sm dark:bg-primary-900/30 dark:text-primary-400"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary-50 text-primary-700 rounded-full text-xs dark:bg-primary-900/30 dark:text-primary-400"
                   >
                     {f}
                     <button onClick={() => removeFilter(f)} className="hover:text-primary-900 dark:hover:text-primary-300">
@@ -301,7 +480,7 @@ export function DashboardPage() {
                   </span>
                 ))}
                 {searchKeyword && (
-                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-orange-50 text-orange-700 rounded-full text-sm dark:bg-orange-900/30 dark:text-orange-400">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-orange-50 text-orange-700 rounded-full text-xs dark:bg-orange-900/30 dark:text-orange-400">
                     搜索: {searchKeyword}
                     <button onClick={() => setSearchKeyword('')} className="hover:text-orange-900 dark:hover:text-orange-300">
                       <X className="w-3 h-3" />
@@ -311,73 +490,117 @@ export function DashboardPage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-4">
-              <PermissionGuard permission="drawing:delete">
-                {selectedIds.size > 0 && (
+            <div className="flex items-center gap-3 flex-shrink-0">
+              {selectedIds.size > 0 && (
+                <>
+                  <PermissionGuard permission="drawing:delete">
+                    <button
+                      onClick={handleBatchDelete}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors text-xs font-medium"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      删除选中 ({selectedIds.size})
+                    </button>
+                  </PermissionGuard>
+                  <PermissionGuard permission="drawing:export">
+                    <button
+                      onClick={handleBatchDownloadPDF}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 bg-primary-500 text-white rounded-md hover:bg-primary-600 transition-colors text-xs font-medium"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      批量下载PDF
+                    </button>
+                  </PermissionGuard>
+                  <PermissionGuard permission="drawing:download">
+                    <button
+                      onClick={handleBatchDownloadDWG}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100 text-slate-700 rounded-md hover:bg-slate-200 transition-colors text-xs font-medium dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      批量下载DWG
+                    </button>
+                  </PermissionGuard>
+                  <PermissionGuard permission="drawing:export">
+                    <button
+                      onClick={handleBatchMergePDF}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-500 text-white rounded-md hover:bg-emerald-600 transition-colors text-xs font-medium"
+                    >
+                      <Layers className="w-3.5 h-3.5" />
+                      合并导出PDF
+                    </button>
+                  </PermissionGuard>
                   <button
-                    onClick={handleBatchDelete}
-                    className="flex items-center gap-2 px-3 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm font-medium"
+                    onClick={handleClearSelection}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100 text-slate-700 rounded-md hover:bg-slate-200 transition-colors text-xs font-medium dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600"
+                    title="取消所有选择"
                   >
-                    <Trash2 className="w-4 h-4" />
-                    删除选中 ({selectedIds.size})
+                    <X className="w-3.5 h-3.5" />
+                    取消选择
                   </button>
+                </>
+              )}
+              <button
+                onClick={handleSelectAll}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md transition-colors text-xs font-medium ${
+                  selectedIds.size === filteredDrawings.length && filteredDrawings.length > 0
+                    ? 'bg-primary-500 text-white hover:bg-primary-600'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600'
+                }`}
+              >
+                {selectedIds.size === filteredDrawings.length && filteredDrawings.length > 0 ? (
+                  <CheckSquare className="w-3.5 h-3.5" />
+                ) : (
+                  <Square className="w-3.5 h-3.5" />
                 )}
-                <button
-                  onClick={handleSelectAll}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm font-medium ${
-                    selectedIds.size === filteredDrawings.length && filteredDrawings.length > 0
-                      ? 'bg-primary-500 text-white hover:bg-primary-600'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600'
-                  }`}
-                >
-                  {selectedIds.size === filteredDrawings.length && filteredDrawings.length > 0 ? (
-                    <CheckSquare className="w-4 h-4" />
-                  ) : (
-                    <Square className="w-4 h-4" />
-                  )}
-                  全选
-                </button>
-              </PermissionGuard>
-              <select className="input-field text-sm w-40">
+                {selectedIds.size === filteredDrawings.length && filteredDrawings.length > 0 ? '取消全选' : '全选'}
+              </button>
+              <select className="px-2 py-1.5 text-xs border border-slate-300 rounded-md focus:ring-1 focus:ring-primary-500 focus:border-primary-500 outline-none dark:bg-slate-700 dark:border-slate-600 dark:text-white w-36">
                 <option>按更新时间排序</option>
                 <option>按容积排序</option>
                 <option>按设计压力排序</option>
                 <option>按公称直径排序</option>
               </select>
 
-              <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
-                <Trash2 className="w-4 h-4" />
-                <span>共 {filteredDrawings.length} 条记录</span>
+              <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                <span>共 {filteredDrawings.length} 条</span>
               </div>
             </div>
           </div>
 
-          <div className="flex-1 overflow-auto p-6">
+          <div className="flex-1 min-h-0 flex flex-col">
             {loading ? (
-              <div className="flex items-center justify-center py-16 text-slate-400">
-                <div className="animate-spin w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full"></div>
+              <div className="flex items-center justify-center py-12 text-slate-400">
+                <div className="animate-spin w-7 h-7 border-3 border-primary-200 border-t-primary-600 rounded-full"></div>
               </div>
             ) : (
               <>
-                {viewMode === 'card' && (
-                  <div className="columns-1 sm:columns-2 lg:columns-3 xl:columns-4 gap-4 [column-fill:_balance]">
+                {viewMode === 'preview' && (
+                  <Waterfall.Container
+                    columns={columnCount}
+                    gap={12}
+                    virtual={true}
+                    overscan={300}
+                    scrollMode="container"
+                    height="100%"
+                    className="w-full h-full flex-1 min-h-0 p-2"
+                  >
                     {filteredDrawings.map((drawing) => (
-                      <div key={drawing.id} className="break-inside-avoid mb-4">
+                      <Waterfall.Item key={drawing.id} id={drawing.id}>
                         <DrawingCard
                           drawing={drawing}
                           onPreview={handlePreview}
                           onDelete={handleDelete}
                           selected={selectedIds.has(drawing.id)}
+                          isSelectionMode={selectedIds.size > 0}
                           onToggleSelect={handleToggleSelect}
-                          showCheckbox={selectedIds.size > 0}
                         />
-                      </div>
+                      </Waterfall.Item>
                     ))}
-                  </div>
+                  </Waterfall.Container>
                 )}
 
                 {viewMode === 'table' && (
-                  <div className="card">
+                  <div className="card flex-1 overflow-auto m-2">
                     <DataTable
                       drawings={filteredDrawings}
                       onPreview={handlePreview}
@@ -388,70 +611,14 @@ export function DashboardPage() {
                 )}
 
                 {viewMode === 'split' && (
-                  <div className="grid grid-cols-2 gap-4 h-full">
-                    <div className="grid grid-cols-1 gap-3 overflow-auto">
-                      {filteredDrawings.map((drawing) => (
-                        <div
-                          key={drawing.id}
-                          className={`card p-3 cursor-pointer transition-all ${
-                            splitSelectedDrawing?.id === drawing.id
-                              ? 'border-primary-500 bg-primary-50/50 dark:bg-primary-900/20'
-                              : 'hover:border-primary-300'
-                          }`}
-                          onClick={() => {
-                            setSplitSelectedDrawing(drawing);
-                          }}
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className={`w-16 h-12 rounded-lg flex items-center justify-center overflow-hidden ${
-                              drawing.structure_type === '立式' ? 'bg-blue-50 dark:bg-blue-900/20' : 'bg-orange-50 dark:bg-orange-900/20'
-                            }`}>
-                              {drawing.preview_image ? (
-                                <img
-                                  src={`http://localhost:3000${drawing.preview_image}`}
-                                  alt={drawing.file_name}
-                                  className={`max-w-full max-h-full ${
-                                    drawing.structure_type === '立式' ? 'w-auto h-full' : 'w-full h-auto'
-                                  }`}
-                                  onError={(e) => {
-                                    (e.target as HTMLImageElement).style.display = 'none';
-                                  }}
-                                />
-                              ) : (
-                                <svg className="w-12 h-10" viewBox="0 0 80 60" fill="none">
-                                  <rect x="5" y="10" width="70" height="40" rx="4" stroke="#475569" strokeWidth="1.5" className="dark:stroke-slate-400" />
-                                  <circle cx="40" cy="25" r="12" stroke="#2563EB" strokeWidth="1.5" fill="none" className="dark:stroke-blue-400" />
-                                  <line x1="40" y1="25" x2="40" y2="48" stroke="#64748B" strokeWidth="1" className="dark:stroke-slate-400" />
-                                </svg>
-                              )}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                <h4 className="font-medium text-slate-800 truncate dark:text-slate-100 text-sm">{drawing.file_name}</h4>
-                                <span className="badge badge-gray text-xs">{drawing.version}</span>
-                              </div>
-                              <div className="flex items-center gap-2 mt-1">
-                                <span className="text-xs text-primary-600 font-medium dark:text-primary-400">{drawing.material_code}</span>
-                                <span
-                                  className={`badge text-xs ${
-                                    drawing.structure_type === '立式' ? 'badge-primary' : 'badge-orange'
-                                  }`}
-                                >
-                                  {drawing.structure_type}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-2 mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                <span>{drawing.volume} m³</span>
-                                <span className="text-slate-300">|</span>
-                                <span>{drawing.design_pressure} MPa</span>
-                                <span className="text-slate-300">|</span>
-                                <span>{drawing.nominal_diameter} mm</span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                  <div className="grid grid-cols-2 gap-4 h-full m-2">
+                      <DrawingSplitList
+                      filteredDrawings={filteredDrawings}
+                      splitSelectedDrawing={splitSelectedDrawing}
+                      setSplitSelectedDrawing={setSplitSelectedDrawing}
+                      height={780}
+                    />
+                 
                     <div className="bg-slate-100 rounded-xl border border-slate-200 dark:bg-slate-800 dark:border-slate-700 overflow-hidden">
                       {splitSelectedDrawing ? (
                         <div className="h-full flex flex-col">
