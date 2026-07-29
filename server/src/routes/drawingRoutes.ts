@@ -297,8 +297,8 @@ router.post('/analyze', async (req: AuthRequest, res) => {
   if (!fs.existsSync(pdfPath)) {
     return res.status(400).json(fail(`文件不存在: ${pdfPath}`));
   }
-
-  const isMultiDrawing = dwg_file_path.includes('&');
+  const dwgFileBaseName = path.basename(dwg_file_path, '.dwg');
+  const isMultiDrawing = dwgFileBaseName.includes('&');
   const pdfDir = path.join(__dirname, '../../uploads/pdf');
 
   try {
@@ -317,6 +317,7 @@ router.post('/analyze', async (req: AuthRequest, res) => {
     
       // 包含多个图纸：按规格重命名
     if (isMultiDrawing) {
+   
       if (parsedData.standard) {
         parsedData.standard = parsedData.standard.replace(/\//g, '-');
         finalPdfFileName = `${parsedData.standard}.pdf`;
@@ -339,6 +340,8 @@ router.post('/analyze', async (req: AuthRequest, res) => {
       // 源路径和目标路径相同时跳过移动（文件已在目标目录）
       if (path.resolve(pdfPath) !== path.resolve(destPdfPath)) {
         fs.moveSync(pdfPath, destPdfPath, { overwrite: true });
+        pdfPath = destPdfPath;
+        
       }
     } else {
       // 单张图纸：使用原始文件名
