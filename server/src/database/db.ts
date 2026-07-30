@@ -58,16 +58,15 @@ function persist() {
   fs.writeFileSync(dbFile, JSON.stringify(data, null, 2), 'utf-8');
 }
 
-// 生成唯一ID
+// 生成唯一ID（UUID字符串）
 function generateId(): string {
- const id = crypto.randomUUID();
- return id;
+  return crypto.randomUUID();
 }
 
 /**
  * 简易查询构建器 - 模拟 SQL 查询接口
  */
-class Table<T extends { id: number }> {
+class Table<T extends { id: string | number }> {
   constructor(private tableName: keyof DbSchema) {}
 
   private get rows(): T[] {

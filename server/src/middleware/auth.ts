@@ -7,8 +7,8 @@ import { fail } from '../utils/response';
 /**
  * 获取用户完整信息（含角色和权限）
  */
-export function getUserWithPermissions(userId: number): SafeUser | null {
-  const user = db.users.get((u) => u.id === userId);
+export function getUserWithPermissions(userId: string | number): SafeUser | null {
+  const user = db.users.get((u) => String(u.id) === String(userId));
   if (!user) return null;
 
   const role = user.role_id ? db.roles.get((r) => r.id === user.role_id) : null;

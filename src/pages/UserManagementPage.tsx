@@ -5,7 +5,7 @@ import { Modal, ConfirmModal } from '../components/Modal';
 import { api } from '../utils/api';
 
 interface UserItem {
-  id: number;
+  id: string | number;
   username: string;
   real_name: string | null;
   email: string | null;
@@ -131,7 +131,7 @@ export function UserManagementPage() {
     });
   };
 
-  const handleDelete = (id: number, name: string) => {
+  const handleDelete = (id: string | number, name: string) => {
     setConfirmModal({
       open: true,
       title: '删除用户',

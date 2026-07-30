@@ -2,7 +2,7 @@ import { Request } from 'express';
 
 // 用户信息（脱敏）
 export interface SafeUser {
-  id: number;
+  id: string | number;
   username: string;
   real_name: string | null;
   email: string | null;

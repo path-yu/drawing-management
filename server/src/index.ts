@@ -230,7 +230,7 @@ app.get('/api/health', (req, res) => {
   res.json(success({ status: 'ok', timestamp: new Date().toISOString() }));
 });
 app.get('/test', async(req, res) => {
-  let pdfPath = 'D:\\GitCode\\drawing-management\\server\\uploads\\pdf\\BCQG0.6-0.84S（内抛光）.pdf.pdf';
+  let pdfPath = 'D:\\GitCode\\drawing-management\\server\\uploads\\pdf\\CQG3-1.1（安全阀侧放）&CQG2.5-1.1（安全阀侧放）.pdf';
   try {
     const textContent = await extractTextFromPDF(pdfPath);
     console.log(textContent);

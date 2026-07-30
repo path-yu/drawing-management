@@ -315,38 +315,8 @@ router.post('/analyze', async (req: AuthRequest, res) => {
     let finalPdfFileName: string;
     const originalFileName = path.basename(pdfPath);
     
-      // 包含多个图纸：按规格重命名
-    if (isMultiDrawing) {
-   
-      if (parsedData.standard) {
-        parsedData.standard = parsedData.standard.replace(/\//g, '-');
-        finalPdfFileName = `${parsedData.standard}.pdf`;
-      } else {
-        finalPdfFileName = originalFileName;
-      }
-
-      // 冲突检测：如果文件名已存在，增加时间戳防止覆盖
-      const targetCheckPath = path.join(pdfDir, finalPdfFileName);
-      if (fs.existsSync(targetCheckPath)) {
-        const volume = parsedData.volume || 0;
-        const design_pressure = parsedData.design_pressure || 0;
-        console.log('文件名已存在，追加时间戳区分');
-        finalPdfFileName = `${Date.now()}_${volume}-${design_pressure}.pdf`;
-      }
-
-      // 4. 移动/转存文件到 uploads/pdf 目录 (兼容跨网络驱动器/跨盘符移动)
-      const destPdfPath = path.join(pdfDir, finalPdfFileName);
-
-      // 源路径和目标路径相同时跳过移动（文件已在目标目录）
-      if (path.resolve(pdfPath) !== path.resolve(destPdfPath)) {
-        fs.moveSync(pdfPath, destPdfPath, { overwrite: true });
-        pdfPath = destPdfPath;
-        
-      }
-    } else {
-      // 单张图纸：使用原始文件名
+     // 单张图纸：使用原始文件名
       finalPdfFileName = originalFileName;
-    }
 
     // 更新变量供后续预览生成和数据库存储使用
     const pdfFilePath = `/uploads/pdf/${finalPdfFileName}`; // 数据库存储的相对 URL 路径

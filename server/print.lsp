@@ -1178,6 +1178,19 @@
                 target_pdf_path
                 (list ent)
               )
+                  ;; --- 【关键】在处理彻底完成后写入同名 .done 文件 ---
+              (setq dwg_full_path (strcat (getvar "DWGPREFIX") (getvar "DWGNAME")))
+              (setq done_full_path (strcat (vl-filename-directory dwg_full_path) "\\" (vl-filename-base dwg_full_path) ".done"))
+              
+              (setq f (open done_full_path "w"))
+              (if f 
+                (progn 
+                  (write-line "OK" f) 
+                  (close f)
+                  (princ (strcat "\n已生成完成信号文件: " done_full_path))
+                )
+              )
+              (princ)
             )
 
             ;; ==========================================================
@@ -1235,6 +1248,19 @@
               (princ "\n==================================================")
               (princ (strcat "\n[全部完成！] 共导出 " (itoa page_count) " 个独立单页 PDF 至: " output_dir))
               (princ "\n==================================================\n")
+                  ;; --- 【关键】在处理彻底完成后写入同名 .done 文件 ---
+              (setq dwg_full_path (strcat (getvar "DWGPREFIX") (getvar "DWGNAME")))
+              (setq done_full_path (strcat (vl-filename-directory dwg_full_path) "\\" (vl-filename-base dwg_full_path) ".done"))
+              
+              (setq f (open done_full_path "w"))
+              (if f 
+                (progn 
+                  (write-line "OK" f) 
+                  (close f)
+                  (princ (strcat "\n已生成完成信号文件: " done_full_path))
+                )
+              )
+              (princ)
             )
           )
         )
@@ -1414,6 +1440,7 @@
       ;; ★ 核心新增：数据写入成功后，立刻静默保存 DWG 文件
       (vl-cmdf "_.QSAVE")
       (princ "\n[图纸自动保存完成]")
+  
     )
   )
 )

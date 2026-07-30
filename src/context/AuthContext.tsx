@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useEffect, ReactNode, useCallback 
 import { api } from '../utils/api';
 
 export interface User {
-  id: number;
+  id: string | number;
   username: string;
   real_name: string | null;
   email: string | null;

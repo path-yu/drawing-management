@@ -77,15 +77,15 @@ router.post('/', authMiddleware, requirePermission('user:create'), (req: AuthReq
  * PUT /api/v1/users/:id - 编辑用户
  */
 router.put('/:id', authMiddleware, requirePermission('user:edit'), (req: AuthRequest, res) => {
-  const userId = parseInt(req.params.id, 10);
+  const userId = req.params.id;
   const { real_name, email, phone, role_id, status } = req.body;
 
-  const user = db.users.get((u) => u.id === userId);
+  const user = db.users.get((u) => String(u.id) === userId);
   if (!user) {
     return res.status(404).json(fail('用户不存在'));
   }
 
-  db.users.update((u) => u.id === userId, {
+  db.users.update((u) => String(u.id) === userId, {
     real_name: real_name || null, email: email || null, phone: phone || null,
     role_id: role_id || null, status: status !== undefined ? status : 1, updated_at: now(),
   });
@@ -98,13 +98,13 @@ router.put('/:id', authMiddleware, requirePermission('user:edit'), (req: AuthReq
  * DELETE /api/v1/users/:id - 删除用户
  */
 router.delete('/:id', authMiddleware, requirePermission('user:delete'), (req: AuthRequest, res) => {
-  const userId = parseInt(req.params.id, 10);
+  const userId = req.params.id;
 
-  if (userId === req.user!.id) {
+  if (String(req.user!.id) === userId) {
     return res.status(400).json(fail('不能删除当前登录用户'));
   }
 
-  const user = db.users.get((u) => u.id === userId);
+  const user = db.users.get((u) => String(u.id) === userId);
   if (!user) {
     return res.status(404).json(fail('用户不存在'));
   }
@@ -114,7 +114,7 @@ router.delete('/:id', authMiddleware, requirePermission('user:delete'), (req: Au
     return res.status(403).json(fail('无权删除超级管理员'));
   }
 
-  db.users.delete((u) => u.id === userId);
+  db.users.delete((u) => String(u.id) === userId);
   res.json(success(null, '用户删除成功'));
 });
 
@@ -122,20 +122,20 @@ router.delete('/:id', authMiddleware, requirePermission('user:delete'), (req: Au
  * PUT /api/v1/users/:id/reset-password - 重置用户密码
  */
 router.put('/:id/reset-password', authMiddleware, requirePermission('user:edit'), (req: AuthRequest, res) => {
-  const userId = parseInt(req.params.id, 10);
+  const userId = req.params.id;
   const { new_password } = req.body;
 
   if (!new_password || new_password.length < 6) {
     return res.status(400).json(fail('新密码不能少于6位'));
   }
 
-  const user = db.users.get((u) => u.id === userId);
+  const user = db.users.get((u) => String(u.id) === userId);
   if (!user) {
     return res.status(404).json(fail('用户不存在'));
   }
 
   const hashedPassword = bcrypt.hashSync(new_password, 10);
-  db.users.update((u) => u.id === userId, { password: hashedPassword, updated_at: now() });
+  db.users.update((u) => String(u.id) === userId, { password: hashedPassword, updated_at: now() });
   res.json(success(null, '密码重置成功'));
 });
 

@@ -14,6 +14,7 @@ import { VesselDrawing, FilterState, ViewMode } from '../types';
 import { api } from '../utils/api';
 import { downloadFile } from '../utils/download';
 import { DrawingSplitList } from '@/components/DrawingSplitList';
+import { useAuth } from '../context/AuthContext';
 
 interface DrawingSearchResponse {
   total: number;
@@ -70,7 +71,11 @@ const initialFilter: FilterState = {
 
 export function DashboardPage() {
   const { id: shareId } = useParams<{ id: string }>();
+  const { hasAnyPermission } = useAuth();
   const persisted = shareId ? {} : loadPersistedState();
+
+  // 是否有批量操作权限（删除、下载PDF、下载DWG、合并导出任意一个即可）
+  const canBatchOperate = hasAnyPermission(['drawing:delete', 'drawing:export', 'drawing:download']);
 
   const [drawings, setDrawings] = useState<VesselDrawing[]>([]);
   const [loading, setLoading] = useState(true);
@@ -164,6 +169,13 @@ export function DashboardPage() {
       setPreviewDrawing(target);
     }
   }, [shareId, loading, filteredDrawings]);
+
+  // 无批量操作权限时清空选中状态
+  useEffect(() => {
+    if (!canBatchOperate && selectedIds.size > 0) {
+      setSelectedIds(new Set());
+    }
+  }, [canBatchOperate]);
 
   const handleResetFilter = () => {
     setFilter(initialFilter);
@@ -491,7 +503,7 @@ export function DashboardPage() {
             </div>
 
             <div className="flex items-center gap-3 flex-shrink-0">
-              {selectedIds.size > 0 && (
+              {canBatchOperate && selectedIds.size > 0 && (
                 <>
                   <PermissionGuard permission="drawing:delete">
                     <button
@@ -539,21 +551,23 @@ export function DashboardPage() {
                   </button>
                 </>
               )}
-              <button
-                onClick={handleSelectAll}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md transition-colors text-xs font-medium ${
-                  selectedIds.size === filteredDrawings.length && filteredDrawings.length > 0
-                    ? 'bg-primary-500 text-white hover:bg-primary-600'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600'
-                }`}
-              >
-                {selectedIds.size === filteredDrawings.length && filteredDrawings.length > 0 ? (
-                  <CheckSquare className="w-3.5 h-3.5" />
-                ) : (
-                  <Square className="w-3.5 h-3.5" />
-                )}
-                {selectedIds.size === filteredDrawings.length && filteredDrawings.length > 0 ? '取消全选' : '全选'}
-              </button>
+              {canBatchOperate && (
+                <button
+                  onClick={handleSelectAll}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md transition-colors text-xs font-medium ${
+                    selectedIds.size === filteredDrawings.length && filteredDrawings.length > 0
+                      ? 'bg-primary-500 text-white hover:bg-primary-600'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600'
+                  }`}
+                >
+                  {selectedIds.size === filteredDrawings.length && filteredDrawings.length > 0 ? (
+                    <CheckSquare className="w-3.5 h-3.5" />
+                  ) : (
+                    <Square className="w-3.5 h-3.5" />
+                  )}
+                  {selectedIds.size === filteredDrawings.length && filteredDrawings.length > 0 ? '取消全选' : '全选'}
+                </button>
+              )}
               <select className="px-2 py-1.5 text-xs border border-slate-300 rounded-md focus:ring-1 focus:ring-primary-500 focus:border-primary-500 outline-none dark:bg-slate-700 dark:border-slate-600 dark:text-white w-36">
                 <option>按更新时间排序</option>
                 <option>按容积排序</option>
@@ -590,9 +604,9 @@ export function DashboardPage() {
                           drawing={drawing}
                           onPreview={handlePreview}
                           onDelete={handleDelete}
-                          selected={selectedIds.has(drawing.id)}
-                          isSelectionMode={selectedIds.size > 0}
-                          onToggleSelect={handleToggleSelect}
+                          selected={canBatchOperate && selectedIds.has(drawing.id)}
+                          isSelectionMode={canBatchOperate && selectedIds.size > 0}
+                          onToggleSelect={canBatchOperate ? handleToggleSelect : undefined}
                         />
                       </Waterfall.Item>
                     ))}

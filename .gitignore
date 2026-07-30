@@ -54,3 +54,8 @@ node_modules/.cache/
 server/uploads/previews/*
 .test.
 server/print.lsp
+.dwg
+server/uploads/dwg/CQG20-0.95&1.6&0.94（DN2200）.dwl
+.gitignore
+.dwl
+server/uploads/*

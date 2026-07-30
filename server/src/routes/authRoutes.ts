@@ -68,7 +68,7 @@ router.post('/login', (req, res) => {
     return res.status(401).json(fail('用户名或密码错误'));
   }
 
-  db.users.update((u) => u.id === userRow.id, { last_login_at: now() });
+  db.users.update((u) => String(u.id) === String(userRow.id), { last_login_at: now() });
 
   const user = getUserWithPermissions(userRow.id);
   const token = generateToken(user!);
@@ -88,7 +88,7 @@ router.get('/profile', authMiddleware, (req: AuthRequest, res) => {
 router.put('/profile', authMiddleware, (req: AuthRequest, res) => {
   const { real_name, email, phone } = req.body;
 
-  db.users.update((u) => u.id === req.user!.id, {
+  db.users.update((u) => String(u.id) === String(req.user!.id), {
     real_name: real_name || null, email: email || null, phone: phone || null, updated_at: now(),
   });
 
@@ -109,13 +109,13 @@ router.put('/password', authMiddleware, (req: AuthRequest, res) => {
     return res.status(400).json(fail('新密码长度不能少于6位'));
   }
 
-  const userRow = db.users.get((u) => u.id === req.user!.id);
+  const userRow = db.users.get((u) => String(u.id) === String(req.user!.id));
   if (!bcrypt.compareSync(old_password, userRow.password)) {
     return res.status(400).json(fail('旧密码不正确'));
   }
 
   const hashedPassword = bcrypt.hashSync(new_password, 10);
-  db.users.update((u) => u.id === req.user!.id, { password: hashedPassword, updated_at: now() });
+  db.users.update((u) => String(u.id) === String(req.user!.id), { password: hashedPassword, updated_at: now() });
   res.json(success(null, '密码修改成功'));
 });
 
